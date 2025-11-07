@@ -1,0 +1,52 @@
+import express from "express";
+import multer from "multer";
+import {
+  uploadServiceManagerFile,
+  getServiceManagerUploads,
+  getUploadData,
+  getDashboardData,
+  getGMDashboardData,
+  deleteUpload,
+  resetDatabase,
+} from "../controllers/serviceManagerController.js";
+import { validateServiceManager, ensureDataOwnership } from "../middleware/authMiddleware.js";
+
+const router = express.Router();
+
+// Configure multer for file uploads
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, "uploads/");
+  },
+  filename: function (req, file, cb) {
+    const timestamp = Date.now();
+    const uploadType = req.body.uploadType || "unknown";
+    const city = req.body.city || "unknown";
+    cb(null, `${city}_${uploadType}_${timestamp}_${file.originalname}`);
+  },
+});
+
+const fileFilter = (req, file, cb) => {
+  if (
+    file.mimetype ===
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+    file.mimetype === "application/vnd.ms-excel"
+  ) {
+    cb(null, true);
+  } else {
+    cb(new Error("Only .xlsx or .xls files are allowed"), false);
+  }
+};
+
+const upload = multer({ storage, fileFilter });
+
+// Routes with authentication middleware
+router.post("/upload", upload.single("file"), validateServiceManager, uploadServiceManagerFile);
+router.get("/uploads", ensureDataOwnership, getServiceManagerUploads);
+router.get("/upload/:uploadId", ensureDataOwnership, getUploadData);
+router.get("/dashboard-data", ensureDataOwnership, getDashboardData);
+router.get("/gm-dashboard-data", getGMDashboardData); // GM dashboard route (no user-specific auth)
+router.delete("/upload/:uploadId", ensureDataOwnership, deleteUpload);
+router.delete("/reset-database", ensureDataOwnership, resetDatabase);
+
+export default router;

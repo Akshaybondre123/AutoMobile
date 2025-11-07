@@ -1,0 +1,161 @@
+"use client"
+
+import { useState, useEffect } from "react"
+import { useAuth } from "@/lib/auth-context"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Upload, AlertCircle, FileText, Calendar, CheckCircle } from "lucide-react"
+import { useRouter } from "next/navigation"
+
+export default function ServiceBookingPage() {
+  const { user } = useAuth()
+  const router = useRouter()
+  const [data, setData] = useState<any[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const loadData = async () => {
+      if (!user?.email || !user?.city) return
+
+      setIsLoading(true)
+      setError(null)
+
+      try {
+        const response = await fetch(
+          `http://localhost:5000/api/service-manager/dashboard-data?uploadedBy=${user.email}&city=${user.city}&dataType=service_booking`
+        )
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch data")
+        }
+
+        const result = await response.json()
+        setData(Array.isArray(result.data) ? result.data : [])
+      } catch (err) {
+        setError("Failed to load data. Please try again.")
+        console.error(err)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    loadData()
+  }, [user?.email, user?.city])
+
+  if (user?.role !== "service_manager") {
+    return (
+      <div className="text-center py-12">
+        <AlertCircle className="h-12 w-12 text-destructive mx-auto mb-4" />
+        <p className="text-lg font-semibold">Access Denied</p>
+        <p className="text-muted-foreground">Only Service Managers can access this page</p>
+      </div>
+    )
+  }
+
+  // Status mapping: Close = Completed, In Progress = Pending
+  const completed = data.filter((row) => {
+    const status = row.status?.toLowerCase()
+    return status === "completed" || status === "close" || status === "closed"
+  }).length
+  
+  const pending = data.filter((row) => {
+    const status = row.status?.toLowerCase()
+    return status === "pending" || status === "in progress"
+  }).length
+  
+  const open = data.filter((row) => row.status?.toLowerCase() === "open").length
+  const cancelled = data.filter((row) => {
+    const status = row.status?.toLowerCase()
+    return status === "cancel" || status === "cancelled" || status === "canceled"
+  }).length
+  
+  const completionRate = data.length ? Math.round((completed / data.length) * 100) : 0
+
+  // Work Type counts
+  const paidService = data.filter((row) => row.workType?.toLowerCase().includes("paid")).length
+  const freeService = data.filter((row) => row.workType?.toLowerCase().includes("free")).length
+  const runningRepair = data.filter((row) => row.workType?.toLowerCase().includes("running")).length
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Service Booking Report</h1>
+          <p className="text-muted-foreground mt-2">View service bookings for {user?.city}</p>
+        </div>
+        <Button onClick={() => router.push("/dashboard/sm/upload")} className="bg-blue-600 hover:bg-blue-700">
+          <Upload className="mr-2 h-4 w-4" />
+          Upload Data
+        </Button>
+      </div>
+
+
+      {/* Data Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Service Bookings</CardTitle>
+          <CardDescription>{data.length} bookings found</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="text-center py-8 text-muted-foreground">Loading...</div>
+          ) : error ? (
+            <div className="text-center py-8 text-red-600">{error}</div>
+          ) : data.length === 0 ? (
+            <div className="text-center py-8">
+              <FileText className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+              <p className="text-gray-600">No data uploaded yet</p>
+              <Button
+                onClick={() => router.push("/dashboard/sm/upload")}
+                className="mt-4 bg-blue-600 hover:bg-blue-700"
+              >
+                <Upload className="mr-2 h-4 w-4" />
+                Upload Data
+              </Button>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="text-left py-3 px-4 font-semibold">Service Advisor</th>
+                    <th className="text-left py-3 px-4 font-semibold">B.T Date & Time</th>
+                    <th className="text-left py-3 px-4 font-semibold">Work Type</th>
+                    <th className="text-center py-3 px-4 font-semibold">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.map((record, idx) => (
+                    <tr key={idx} className="border-b hover:bg-muted/50">
+                      <td className="py-3 px-4">{record.serviceAdvisor}</td>
+                      <td className="py-3 px-4">{record.btDateTime}</td>
+                      <td className="py-3 px-4">{record.workType}</td>
+                      <td className="text-center py-3 px-4">
+                        <span
+                          className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            record.status?.toLowerCase() === "close" || record.status?.toLowerCase() === "closed" || record.status?.toLowerCase() === "completed"
+                              ? "bg-green-100 text-green-800"
+                              : record.status?.toLowerCase() === "cancel" || record.status?.toLowerCase() === "cancelled" || record.status?.toLowerCase() === "canceled"
+                                ? "bg-red-100 text-red-800"
+                                : record.status?.toLowerCase() === "in progress" || record.status?.toLowerCase() === "pending"
+                                  ? "bg-orange-100 text-orange-800"
+                                  : record.status?.toLowerCase() === "open"
+                                    ? "bg-blue-100 text-blue-800"
+                                    : "bg-gray-100 text-gray-800"
+                          }`}
+                        >
+                          {record.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
