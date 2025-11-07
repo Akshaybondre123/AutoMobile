@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { TrendingUp, Upload, FileText, DollarSign, Clock, Shield, Calendar, BarChart3, Loader2, CheckCircle, Car, Wrench, Gauge, Activity, Users } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts"
+import { getApiUrl } from "@/lib/config"
 
 type DataType = "ro_billing" | "operations" | "warranty" | "service_booking" | "average"
 
@@ -44,7 +45,7 @@ export default function SMDashboard() {
 
     try {
       const response = await fetch(
-        `http://localhost:5000/api/service-manager/dashboard-data?uploadedBy=${user.email}&city=${user.city}&dataType=${dataType}`
+        getApiUrl(`/api/service-manager/dashboard-data?uploadedBy=${user.email}&city=${user.city}&dataType=${dataType}`)
       )
 
       if (!response.ok) {
@@ -83,7 +84,7 @@ export default function SMDashboard() {
       
       try {
         const response = await fetch(
-          `http://localhost:5000/api/service-manager/dashboard-data?uploadedBy=${user.email}&city=${user.city}&dataType=service_booking`
+          getApiUrl(`/api/service-manager/dashboard-data?uploadedBy=${user.email}&city=${user.city}&dataType=service_booking`)
         )
         
         if (response.ok) {

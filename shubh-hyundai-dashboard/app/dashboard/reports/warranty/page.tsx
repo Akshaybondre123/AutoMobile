@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Upload, AlertCircle, FileText, DollarSign, Shield } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { getApiUrl } from "@/lib/config"
 
 export default function WarrantyPage() {
   const { user } = useAuth()
@@ -23,7 +24,7 @@ export default function WarrantyPage() {
 
       try {
         const response = await fetch(
-          `http://localhost:5000/api/service-manager/dashboard-data?uploadedBy=${user.email}&city=${user.city}&dataType=warranty`
+          getApiUrl(`/api/service-manager/dashboard-data?uploadedBy=${user.email}&city=${user.city}&dataType=warranty`)
         )
 
         if (!response.ok) {

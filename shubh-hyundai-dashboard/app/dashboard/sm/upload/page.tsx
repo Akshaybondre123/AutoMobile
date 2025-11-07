@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Upload, CheckCircle, AlertCircle, FileText, Loader2 } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { getApiUrl } from "@/lib/config"
 
 type UploadType = "ro_billing" | "operations" | "warranty" | "service_booking"
 
@@ -93,7 +94,7 @@ export default function ServiceManagerUploadPage() {
       formData.append("city", user.city)
       formData.append("uploadType", type)
 
-      const response = await fetch("http://localhost:5000/api/service-manager/upload", {
+      const response = await fetch(getApiUrl("/api/service-manager/upload"), {
         method: "POST",
         body: formData,
       })

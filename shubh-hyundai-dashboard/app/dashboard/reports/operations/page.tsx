@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Upload, AlertCircle, FileText, DollarSign, BarChart3, Search } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { useRouter } from "next/navigation"
+import { getApiUrl } from "@/lib/config"
 
 export default function OperationsPage() {
   const { user } = useAuth()
@@ -26,7 +27,7 @@ export default function OperationsPage() {
 
       try {
         const response = await fetch(
-          `http://localhost:5000/api/service-manager/dashboard-data?uploadedBy=${user.email}&city=${user.city}&dataType=operations`
+          getApiUrl(`/api/service-manager/dashboard-data?uploadedBy=${user.email}&city=${user.city}&dataType=operations`)
         )
 
         if (!response.ok) {

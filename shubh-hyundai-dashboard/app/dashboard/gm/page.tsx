@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { FileText, DollarSign, Shield, Calendar, TrendingUp, BarChart3, Loader2, Building2, Filter } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { getApiUrl } from "@/lib/config"
 
 interface GMDashboardData {
   dataType: string
@@ -32,7 +33,7 @@ export default function GMDashboard() {
 
     try {
       const response = await fetch(
-        `http://localhost:5000/api/service-manager/gm-dashboard-data?city=${city}&dataType=average`
+        getApiUrl(`/api/service-manager/gm-dashboard-data?city=${city}&dataType=average`)
       )
 
       if (!response.ok) {

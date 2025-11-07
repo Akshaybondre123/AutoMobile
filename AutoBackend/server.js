@@ -16,7 +16,12 @@ app.use("/api", uploadRoutes);
 app.use("/api/service-manager", serviceManagerRoutes);
 
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("✅ MongoDB connected successfully"))
-  .catch(err => console.error(err));
+  .then(() => {
+    console.log("✅ MongoDB connected successfully");
 
-app.listen(5000, () => console.log("🚀 Server running on port 5000"));
+    // Start server only after DB connects
+    app.listen(5000, () => console.log("🚀 Server running on port 5000"));
+  })
+  .catch(err => {
+    console.error("❌ MongoDB connection failed:", err.message);
+  });
