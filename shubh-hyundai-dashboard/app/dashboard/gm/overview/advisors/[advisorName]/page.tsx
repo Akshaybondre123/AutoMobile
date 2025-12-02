@@ -7,7 +7,7 @@ import { getApiUrl } from '@/lib/config';
 import { 
   ArrowLeft, User, DollarSign, Wrench, Package, Target,
   TrendingUp, TrendingDown, Calendar, BarChart3, PieChart,
-  CheckCircle, Clock, AlertTriangle, Award, Activity
+  CheckCircle, Clock, AlertTriangle, Award, Activity, Car
 } from 'lucide-react';
 
 interface AdvisorDetails {
@@ -30,6 +30,10 @@ interface AdvisorDetails {
   shortfall: number;
   perDayAsking: number;
   daysRemaining: number;
+  // Bodyshop Data
+  isBodyshop: boolean;
+  accidentalRepairCount: number;
+  accidentalRepairAmount: number;
 }
 
 const AdvisorDetailPage = () => {
@@ -42,6 +46,7 @@ const AdvisorDetailPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [targetData, setTargetData] = useState<any>(null);
+  const [isBodyshopAdvisor, setIsBodyshopAdvisor] = useState(false);
 
   // Fetch target data from localStorage (client-side only)
   useEffect(() => {
@@ -111,40 +116,66 @@ const AdvisorDetailPage = () => {
           operationsData = await operationsResponse.json();
         }
 
-        // Process RO Billing data for this advisor (same logic as reports/targets page)
+        // Process RO Billing data for this advisor
         const advisorROs = roBillingData.data.filter((record: any) => 
           record.serviceAdvisor === advisorName
         );
 
-        // Calculate achieved values using reports/targets page logic
+        // Check if this advisor is a bodyshop advisor
+        const accidentalRepairROs = advisorROs.filter((record: any) => 
+          record.workType?.toLowerCase().includes('accidental repair') ||
+          record.workType?.toLowerCase().includes('bodyshop') ||
+          record.workType?.toLowerCase().includes('accident')
+        );
+        
+        const isBodyshop = accidentalRepairROs.length > 0;
+        setIsBodyshopAdvisor(isBodyshop);
+
+        // Calculate achieved values
         const achievedMap = {
           labour: 0,
           parts: 0,
           vehicles: 0,
           paid: 0,
           free: 0,
-          rr: 0
+          rr: 0,
+          accidentalRepair: 0,
+          accidentalRepairAmount: 0
         };
 
-        advisorROs.forEach((record: any) => {
-          // Labour and parts (same as reports/targets)
-          achievedMap.labour += Number(record.labourAmt || 0);
-          achievedMap.parts += Number(record.partAmt || 0);
-          achievedMap.vehicles += 1;
+        if (isBodyshop) {
+          // For bodyshop advisors, only process accidental repair data
+          accidentalRepairROs.forEach((record: any) => {
+            achievedMap.labour += Number(record.labourAmt || 0);
+            achievedMap.parts += Number(record.partAmt || 0);
+            achievedMap.vehicles += 1;
+            achievedMap.accidentalRepair += 1;
+            achievedMap.accidentalRepairAmount += Number(record.labourAmt || 0) + Number(record.partAmt || 0);
+          });
+        } else {
+          // For regular service advisors, process all non-accidental repair data
+          const regularROs = advisorROs.filter((record: any) => 
+            !record.workType?.toLowerCase().includes('accidental repair')
+          );
           
-          // Work type categorization (same as reports/targets)
-          const workType = record.workType || '';
-          if (workType.toLowerCase().includes("paid")) {
-            achievedMap.paid += 1;
-          }
-          if (workType.toLowerCase().includes("free")) {
-            achievedMap.free += 1;
-          }
-          const wt = workType.toLowerCase();
-          if (wt.includes("r&r") || wt.includes("r and r") || wt.includes("running repair") || wt.includes("rr") || wt.includes("running")) {
-            achievedMap.rr += 1;
-          }
-        });
+          regularROs.forEach((record: any) => {
+            achievedMap.labour += Number(record.labourAmt || 0);
+            achievedMap.parts += Number(record.partAmt || 0);
+            achievedMap.vehicles += 1;
+            
+            const workType = record.workType || '';
+            if (workType.toLowerCase().includes("paid")) {
+              achievedMap.paid += 1;
+            }
+            if (workType.toLowerCase().includes("free")) {
+              achievedMap.free += 1;
+            }
+            const wt = workType.toLowerCase();
+            if (wt.includes("r&r") || wt.includes("r and r") || wt.includes("running repair") || wt.includes("rr") || wt.includes("running")) {
+              achievedMap.rr += 1;
+            }
+          });
+        }
 
         // Use achieved values for display
         const labourAmount = achievedMap.labour;
@@ -200,7 +231,10 @@ const AdvisorDetailPage = () => {
           achievedAmount: achievedMap.labour,
           shortfall: labourShortfall,
           perDayAsking: labourPerDayAsking,
-          daysRemaining
+          daysRemaining,
+          isBodyshop,
+          accidentalRepairCount: achievedMap.accidentalRepair,
+          accidentalRepairAmount: achievedMap.accidentalRepairAmount
         };
 
         setAdvisorData(details);
@@ -279,7 +313,15 @@ const AdvisorDetailPage = () => {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-gray-900">{advisorData.name}</h1>
-              <p className="text-gray-600">Service Advisor Performance Dashboard</p>
+              <p className="text-gray-600">
+                {advisorData.isBodyshop ? 'Bodyshop Advisor Performance Dashboard' : 'Service Advisor Performance Dashboard'}
+              </p>
+              {advisorData.isBodyshop && (
+                <div className="flex items-center gap-2 mt-1">
+                  <Car className="h-4 w-4 text-red-600" />
+                  <span className="text-sm text-red-600 font-medium">Bodyshop Specialist</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -333,87 +375,145 @@ const AdvisorDetailPage = () => {
           </div>
         </div>
 
-        {/* RO Billing Details */}
+        {/* Performance Details - Conditional based on advisor type */}
         <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-            <BarChart3 className="h-5 w-5 text-blue-600" />
-            RO Billing Performance
-          </h2>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-              <div className="flex items-center gap-3">
-                <div className="bg-green-100 p-2 rounded-lg">
-                  <CheckCircle className="h-5 w-5 text-green-600" />
+          {advisorData.isBodyshop ? (
+            // Bodyshop Performance
+            <>
+              <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                <Car className="h-5 w-5 text-red-600" />
+                Bodyshop - Accidental Repair Performance
+              </h2>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-red-100 p-2 rounded-lg">
+                      <Car className="h-5 w-5 text-red-600" />
+                    </div>
+                    <div>
+                      <div className="text-2xl font-bold text-red-700">{advisorData.accidentalRepairCount}</div>
+                      <div className="text-sm text-red-600">Accidental Repairs</div>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <div className="text-2xl font-bold text-green-700">{advisorData.freeService}</div>
-                  <div className="text-sm text-green-600">Free Service</div>
-                </div>
-              </div>
-            </div>
 
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <div className="flex items-center gap-3">
-                <div className="bg-blue-100 p-2 rounded-lg">
-                  <DollarSign className="h-5 w-5 text-blue-600" />
-                </div>
-                <div>
-                  <div className="text-2xl font-bold text-blue-700">{advisorData.paidService}</div>
-                  <div className="text-sm text-blue-600">Paid Service</div>
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-orange-100 p-2 rounded-lg">
+                      <DollarSign className="h-5 w-5 text-orange-600" />
+                    </div>
+                    <div>
+                      <div className="text-2xl font-bold text-orange-700">{formatCurrency(advisorData.accidentalRepairAmount)}</div>
+                      <div className="text-sm text-orange-600">Repair Revenue</div>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-              <div className="flex items-center gap-3">
-                <div className="bg-orange-100 p-2 rounded-lg">
-                  <Wrench className="h-5 w-5 text-orange-600" />
-                </div>
-                <div>
-                  <div className="text-2xl font-bold text-orange-700">{advisorData.runningRepair}</div>
-                  <div className="text-sm text-orange-600">Running Repair</div>
+              <div className="bg-gray-50 rounded-lg p-4">
+                <h3 className="text-lg font-semibold text-gray-900 mb-3">Bodyshop Performance</h3>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-20 text-sm text-gray-600">Repairs</div>
+                    <div className="flex-1 bg-gray-200 rounded-full h-4">
+                      <div className="bg-red-500 h-4 rounded-full" style={{ width: '100%' }}></div>
+                    </div>
+                    <div className="w-12 text-sm text-gray-600">{advisorData.accidentalRepairCount}</div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-20 text-sm text-gray-600">Revenue</div>
+                    <div className="flex-1 bg-gray-200 rounded-full h-4">
+                      <div className="bg-orange-500 h-4 rounded-full" style={{ width: '100%' }}></div>
+                    </div>
+                    <div className="w-12 text-sm text-gray-600">{formatCurrency(advisorData.accidentalRepairAmount)}</div>
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
+            </>
+          ) : (
+            // Regular Service Advisor Performance
+            <>
+              <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                <BarChart3 className="h-5 w-5 text-blue-600" />
+                RO Billing Performance
+              </h2>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-green-100 p-2 rounded-lg">
+                      <CheckCircle className="h-5 w-5 text-green-600" />
+                    </div>
+                    <div>
+                      <div className="text-2xl font-bold text-green-700">{advisorData.freeService}</div>
+                      <div className="text-sm text-green-600">Free Service</div>
+                    </div>
+                  </div>
+                </div>
 
-          {/* Simple Bar Chart for Service Types */}
-          <div className="bg-gray-50 rounded-lg p-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-3">Service Distribution</h3>
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <div className="w-20 text-sm text-gray-600">Free</div>
-                <div className="flex-1 bg-gray-200 rounded-full h-4">
-                  <div 
-                    className="bg-green-500 h-4 rounded-full" 
-                    style={{ width: `${(advisorData.freeService / advisorData.totalROs) * 100}%` }}
-                  ></div>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-blue-100 p-2 rounded-lg">
+                      <DollarSign className="h-5 w-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <div className="text-2xl font-bold text-blue-700">{advisorData.paidService}</div>
+                      <div className="text-sm text-blue-600">Paid Service</div>
+                    </div>
+                  </div>
                 </div>
-                <div className="w-12 text-sm text-gray-600">{advisorData.freeService}</div>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="w-20 text-sm text-gray-600">Paid</div>
-                <div className="flex-1 bg-gray-200 rounded-full h-4">
-                  <div 
-                    className="bg-blue-500 h-4 rounded-full" 
-                    style={{ width: `${(advisorData.paidService / advisorData.totalROs) * 100}%` }}
-                  ></div>
+
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-orange-100 p-2 rounded-lg">
+                      <Wrench className="h-5 w-5 text-orange-600" />
+                    </div>
+                    <div>
+                      <div className="text-2xl font-bold text-orange-700">{advisorData.runningRepair}</div>
+                      <div className="text-sm text-orange-600">Running Repair</div>
+                    </div>
+                  </div>
                 </div>
-                <div className="w-12 text-sm text-gray-600">{advisorData.paidService}</div>
               </div>
-              <div className="flex items-center gap-3">
-                <div className="w-20 text-sm text-gray-600">Repair</div>
-                <div className="flex-1 bg-gray-200 rounded-full h-4">
-                  <div 
-                    className="bg-orange-500 h-4 rounded-full" 
-                    style={{ width: `${(advisorData.runningRepair / advisorData.totalROs) * 100}%` }}
-                  ></div>
+
+              <div className="bg-gray-50 rounded-lg p-4">
+                <h3 className="text-lg font-semibold text-gray-900 mb-3">Service Distribution</h3>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-20 text-sm text-gray-600">Free</div>
+                    <div className="flex-1 bg-gray-200 rounded-full h-4">
+                      <div 
+                        className="bg-green-500 h-4 rounded-full" 
+                        style={{ width: `${advisorData.totalROs > 0 ? (advisorData.freeService / advisorData.totalROs) * 100 : 0}%` }}
+                      ></div>
+                    </div>
+                    <div className="w-12 text-sm text-gray-600">{advisorData.freeService}</div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-20 text-sm text-gray-600">Paid</div>
+                    <div className="flex-1 bg-gray-200 rounded-full h-4">
+                      <div 
+                        className="bg-blue-500 h-4 rounded-full" 
+                        style={{ width: `${advisorData.totalROs > 0 ? (advisorData.paidService / advisorData.totalROs) * 100 : 0}%` }}
+                      ></div>
+                    </div>
+                    <div className="w-12 text-sm text-gray-600">{advisorData.paidService}</div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-20 text-sm text-gray-600">Repair</div>
+                    <div className="flex-1 bg-gray-200 rounded-full h-4">
+                      <div 
+                        className="bg-orange-500 h-4 rounded-full" 
+                        style={{ width: `${advisorData.totalROs > 0 ? (advisorData.runningRepair / advisorData.totalROs) * 100 : 0}%` }}
+                      ></div>
+                    </div>
+                    <div className="w-12 text-sm text-gray-600">{advisorData.runningRepair}</div>
+                  </div>
                 </div>
-                <div className="w-12 text-sm text-gray-600">{advisorData.runningRepair}</div>
               </div>
-            </div>
-          </div>
+            </>
+          )}
         </div>
 
         {/* Operations & VAS Details */}
@@ -462,240 +562,26 @@ const AdvisorDetailPage = () => {
           </div>
         </div>
 
-        {/* Target Performance */}
-        <div className="bg-gradient-to-br from-white via-blue-50 to-indigo-50 rounded-xl shadow-lg border border-blue-200 p-6">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-gradient-to-br from-red-500 to-red-600 p-2.5 shadow-md">
-                <Target className="h-6 w-6 text-white" />
-              </div>
-              <div>
-                <h2 className="text-2xl font-bold text-gray-900">Target Performance</h2>
-                <p className="text-sm text-gray-600 mt-1">Monthly targets vs achievements for {targetData?.month || 'Current Month'}</p>
+        {/* Targets Redirect */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="text-center py-8">
+            <div className="flex justify-center mb-4">
+              <div className="rounded-full bg-yellow-100 p-3">
+                <AlertTriangle className="h-8 w-8 text-yellow-600" />
               </div>
             </div>
-            <div className="text-right">
-              <div className="bg-white rounded-lg px-4 py-2 shadow-sm border border-gray-200">
-                <div className="text-xs text-gray-500 uppercase tracking-wide">Days Remaining</div>
-                <div className="text-2xl font-bold text-blue-600">{advisorData?.daysRemaining || 0}</div>
-              </div>
-            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">No Targets Assigned</h3>
+            <p className="text-gray-600 mb-6">
+              Please assign targets for this advisor in the SM Targets page
+            </p>
+            <button
+              onClick={() => router.push('/dashboard/reports/targets')}
+              className="inline-flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+            >
+              <Target className="h-5 w-5" />
+              Go to Targets Page
+            </button>
           </div>
-          
-          
-
-          {targetData ? (
-            <div className="space-y-6">
-              {/* Key Metrics Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-600">Labour Achievement</p>
-                      <p className="text-2xl font-bold text-green-600">{formatCurrency(advisorData.achievedAmount)}</p>
-                      <p className="text-xs text-gray-500">Target: {formatCurrency(targetData.labour)}</p>
-                    </div>
-                    <div className="text-right">
-                      <div className={`text-lg font-bold ${advisorData.achievedAmount >= targetData.labour ? 'text-green-600' : 'text-red-600'}`}>
-                        {((advisorData.achievedAmount / targetData.labour) * 100).toFixed(1)}%
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-600">Parts Achievement</p>
-                      <p className="text-2xl font-bold text-blue-600">{formatCurrency(advisorData.partAmount)}</p>
-                      <p className="text-xs text-gray-500">Target: {formatCurrency(targetData.parts)}</p>
-                    </div>
-                    <div className="text-right">
-                      <div className={`text-lg font-bold ${advisorData.partAmount >= targetData.parts ? 'text-green-600' : 'text-red-600'}`}>
-                        {((advisorData.partAmount / targetData.parts) * 100).toFixed(1)}%
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-600">Vehicles Serviced</p>
-                      <p className="text-2xl font-bold text-purple-600">{advisorData.totalROs}</p>
-                      <p className="text-xs text-gray-500">Target: {targetData.totalVehicles}</p>
-                    </div>
-                    <div className="text-right">
-                      <div className={`text-lg font-bold ${advisorData.totalROs >= targetData.totalVehicles ? 'text-green-600' : 'text-red-600'}`}>
-                        {((advisorData.totalROs / targetData.totalVehicles) * 100).toFixed(1)}%
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Detailed Performance Table */}
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-                <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 border-b border-gray-200">
-                  <h3 className="text-lg font-semibold text-gray-900">Detailed Performance Breakdown</h3>
-                  <p className="text-sm text-gray-600 mt-1">Complete target vs achievement analysis</p>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
-                        <th className="text-left py-4 px-6 font-semibold">Metric</th>
-                        <th className="text-right py-4 px-4 font-semibold">Target</th>
-                        <th className="text-right py-4 px-4 font-semibold">Achieved</th>
-                        <th className="text-right py-4 px-4 font-semibold">Achievement %</th>
-                        <th className="text-right py-4 px-4 font-semibold">Shortfall</th>
-                        <th className="text-right py-4 px-6 font-semibold">Daily Required</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr className="border-b border-gray-100 hover:bg-blue-50 transition-colors">
-                        <td className="py-4 px-6">
-                          <div className="flex items-center gap-2">
-                            <span className="text-2xl">💼</span>
-                            <span className="font-medium text-gray-900">Labour Revenue</span>
-                          </div>
-                        </td>
-                        <td className="text-right py-4 px-4 font-semibold">{formatCurrency(targetData.labour)}</td>
-                        <td className="text-right py-4 px-4 font-semibold text-green-600">{formatCurrency(advisorData.achievedAmount)}</td>
-                        <td className="text-right py-4 px-4">
-                          <span className={`font-bold ${advisorData.achievedAmount >= targetData.labour ? 'text-green-600' : 'text-red-600'}`}>
-                            {((advisorData.achievedAmount / targetData.labour) * 100).toFixed(1)}%
-                          </span>
-                        </td>
-                        <td className="text-right py-4 px-4 font-semibold text-red-600">{formatCurrency(advisorData.shortfall)}</td>
-                        <td className="text-right py-4 px-6 font-semibold text-orange-600">{formatCurrency(advisorData.perDayAsking)}</td>
-                      </tr>
-                      
-                      <tr className="border-b border-gray-100 hover:bg-blue-50 transition-colors">
-                        <td className="py-4 px-6">
-                          <div className="flex items-center gap-2">
-                            <span className="text-2xl">🔧</span>
-                            <span className="font-medium text-gray-900">Parts Revenue</span>
-                          </div>
-                        </td>
-                        <td className="text-right py-4 px-4 font-semibold">{formatCurrency(targetData.parts)}</td>
-                        <td className="text-right py-4 px-4 font-semibold text-green-600">{formatCurrency(advisorData.partAmount)}</td>
-                        <td className="text-right py-4 px-4">
-                          <span className={`font-bold ${advisorData.partAmount >= targetData.parts ? 'text-green-600' : 'text-red-600'}`}>
-                            {((advisorData.partAmount / targetData.parts) * 100).toFixed(1)}%
-                          </span>
-                        </td>
-                        <td className="text-right py-4 px-4 font-semibold text-red-600">{formatCurrency(Math.max(0, targetData.parts - advisorData.partAmount))}</td>
-                        <td className="text-right py-4 px-6 font-semibold text-orange-600">{formatCurrency(Math.ceil(Math.max(0, targetData.parts - advisorData.partAmount) / advisorData.daysRemaining))}</td>
-                      </tr>
-                      
-                      <tr className="border-b border-gray-100 hover:bg-blue-50 transition-colors">
-                        <td className="py-4 px-6">
-                          <div className="flex items-center gap-2">
-                            <span className="text-2xl">🚗</span>
-                            <span className="font-medium text-gray-900">Total Vehicles</span>
-                          </div>
-                        </td>
-                        <td className="text-right py-4 px-4 font-semibold">{targetData.totalVehicles.toLocaleString()}</td>
-                        <td className="text-right py-4 px-4 font-semibold text-green-600">{advisorData.totalROs.toLocaleString()}</td>
-                        <td className="text-right py-4 px-4">
-                          <span className={`font-bold ${advisorData.totalROs >= targetData.totalVehicles ? 'text-green-600' : 'text-red-600'}`}>
-                            {((advisorData.totalROs / targetData.totalVehicles) * 100).toFixed(1)}%
-                          </span>
-                        </td>
-                        <td className="text-right py-4 px-4 font-semibold text-red-600">{Math.max(0, targetData.totalVehicles - advisorData.totalROs).toLocaleString()}</td>
-                        <td className="text-right py-4 px-6 font-semibold text-orange-600">{Math.ceil(Math.max(0, targetData.totalVehicles - advisorData.totalROs) / advisorData.daysRemaining).toLocaleString()}</td>
-                      </tr>
-                      
-                      <tr className="border-b border-gray-100 hover:bg-blue-50 transition-colors">
-                        <td className="py-4 px-6">
-                          <div className="flex items-center gap-2">
-                            <span className="text-2xl">💳</span>
-                            <span className="font-medium text-gray-900">Paid Service</span>
-                          </div>
-                        </td>
-                        <td className="text-right py-4 px-4 font-semibold">{targetData.paidService.toLocaleString()}</td>
-                        <td className="text-right py-4 px-4 font-semibold text-green-600">{advisorData.paidService.toLocaleString()}</td>
-                        <td className="text-right py-4 px-4">
-                          <span className={`font-bold ${advisorData.paidService >= targetData.paidService ? 'text-green-600' : 'text-red-600'}`}>
-                            {targetData.paidService > 0 ? ((advisorData.paidService / targetData.paidService) * 100).toFixed(1) : '0.0'}%
-                          </span>
-                        </td>
-                        <td className="text-right py-4 px-4 font-semibold text-red-600">{Math.max(0, targetData.paidService - advisorData.paidService).toLocaleString()}</td>
-                        <td className="text-right py-4 px-6 font-semibold text-orange-600">{Math.ceil(Math.max(0, targetData.paidService - advisorData.paidService) / advisorData.daysRemaining).toLocaleString()}</td>
-                      </tr>
-                      
-                      <tr className="border-b border-gray-100 hover:bg-blue-50 transition-colors">
-                        <td className="py-4 px-6">
-                          <div className="flex items-center gap-2">
-                            <span className="text-2xl">🎁</span>
-                            <span className="font-medium text-gray-900">Free Service</span>
-                          </div>
-                        </td>
-                        <td className="text-right py-4 px-4 font-semibold">{targetData.freeService.toLocaleString()}</td>
-                        <td className="text-right py-4 px-4 font-semibold text-green-600">{advisorData.freeService.toLocaleString()}</td>
-                        <td className="text-right py-4 px-4">
-                          <span className={`font-bold ${advisorData.freeService >= targetData.freeService ? 'text-green-600' : 'text-red-600'}`}>
-                            {targetData.freeService > 0 ? ((advisorData.freeService / targetData.freeService) * 100).toFixed(1) : '0.0'}%
-                          </span>
-                        </td>
-                        <td className="text-right py-4 px-4 font-semibold text-red-600">{Math.max(0, targetData.freeService - advisorData.freeService).toLocaleString()}</td>
-                        <td className="text-right py-4 px-6 font-semibold text-orange-600">{Math.ceil(Math.max(0, targetData.freeService - advisorData.freeService) / advisorData.daysRemaining).toLocaleString()}</td>
-                      </tr>
-                      
-                      <tr className="hover:bg-blue-50 transition-colors">
-                        <td className="py-4 px-6">
-                          <div className="flex items-center gap-2">
-                            <span className="text-2xl">🔄</span>
-                            <span className="font-medium text-gray-900">R&R Jobs</span>
-                          </div>
-                        </td>
-                        <td className="text-right py-4 px-4 font-semibold">{targetData.rr.toLocaleString()}</td>
-                        <td className="text-right py-4 px-4 font-semibold text-green-600">{advisorData.runningRepair.toLocaleString()}</td>
-                        <td className="text-right py-4 px-4">
-                          <span className={`font-bold ${advisorData.runningRepair >= targetData.rr ? 'text-green-600' : 'text-red-600'}`}>
-                            {targetData.rr > 0 ? ((advisorData.runningRepair / targetData.rr) * 100).toFixed(1) : '0.0'}%
-                          </span>
-                        </td>
-                        <td className="text-right py-4 px-4 font-semibold text-red-600">{Math.max(0, targetData.rr - advisorData.runningRepair).toLocaleString()}</td>
-                        <td className="text-right py-4 px-6 font-semibold text-orange-600">{Math.ceil(Math.max(0, targetData.rr - advisorData.runningRepair) / advisorData.daysRemaining).toLocaleString()}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Action Items */}
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6">
-                <div className="flex items-start gap-4">
-                  <div className="rounded-lg bg-blue-100 p-2">
-                    <Calendar className="h-5 w-5 text-blue-600" />
-                  </div>
-                  <div className="flex-1">
-                    <h4 className="font-semibold text-gray-900 mb-2">Daily Action Plan</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <p className="text-blue-700"><strong>Primary Focus:</strong> {formatCurrency(advisorData.perDayAsking)} labour revenue per day</p>
-                        <p className="text-gray-600 mt-1">Remaining days: <strong>{advisorData.daysRemaining}</strong></p>
-                      </div>
-                      <div>
-                        <p className="text-purple-700"><strong>Vehicle Target:</strong> {Math.ceil(Math.max(0, targetData.totalVehicles - advisorData.totalROs) / advisorData.daysRemaining)} vehicles per day</p>
-                        <p className="text-gray-600 mt-1">Current achievement: <strong>{((advisorData.achievedAmount / targetData.labour) * 100).toFixed(1)}%</strong></p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
-              <AlertTriangle className="h-8 w-8 text-yellow-600 mx-auto mb-2" />
-              <div className="text-yellow-700 font-semibold">No Targets Assigned</div>
-              <div className="text-sm text-yellow-600 mt-1">
-                Please assign targets for this advisor in the SM Targets page
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>

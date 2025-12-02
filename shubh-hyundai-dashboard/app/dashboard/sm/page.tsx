@@ -1,14 +1,17 @@
 "use client"
 
-import React, { useEffect, useState } from "react"
+import React, { useEffect, useState, useRef } from "react"
 import { useAuth } from "@/lib/auth-context"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { TrendingUp, Upload, FileText, DollarSign, Clock, Shield, Calendar, BarChart3, Loader2, CheckCircle, Car, Wrench, Gauge, Activity, Users } from "lucide-react"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { TrendingUp, Upload, FileText, DollarSign, Clock, Shield, Calendar, BarChart3, Loader2, CheckCircle, Car, Wrench, Gauge, Activity, Users, AlertCircle, Search, CalendarIcon } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts"
 import { getApiUrl } from "@/lib/config"
+import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
 
 type DataType = "ro_billing" | "operations" | "warranty" | "service_booking" | "average"
 
@@ -20,6 +23,478 @@ interface DashboardData {
   data?: any[]
   summary?: any
   uploads?: any[]
+}
+
+interface AdvisorOperation {
+  advisorName: string
+  fileName?: string
+  uploadDate?: string
+  dataDate?: string
+  totalMatchedAmount: number
+  matchedOperations?: Array<{
+    operation: string
+    amount: number
+  }>
+}
+
+// Advisor Operations Section Component
+const AdvisorOperationsSection = ({ user }: { user: any }) => {
+  const [advisors, setAdvisors] = useState<string[]>([])
+  const [operationsData, setOperationsData] = useState<AdvisorOperation[]>([])
+  const [roData, setRoData] = useState<any[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [uploadingAdvisor, setUploadingAdvisor] = useState<string | null>(null)
+  const [searchTerm, setSearchTerm] = useState("")
+  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0])
+  const [viewMode, setViewMode] = useState<'cumulative' | 'specific'>('cumulative')
+  const fileInputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({})
+
+  // Fetch unique advisors from RO Billing
+  useEffect(() => {
+    const loadAdvisors = async () => {
+      if (!user?.email || !user?.city) return
+
+      setIsLoading(true)
+      setError(null)
+
+      try {
+        const response = await fetch(
+          getApiUrl(`/api/service-manager/dashboard-data?uploadedBy=${user.email}&city=${user.city}&dataType=ro_billing`)
+        )
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch RO Billing data")
+        }
+
+        const result = await response.json()
+        const roBillingData = Array.isArray(result.data) ? result.data : []
+        setRoData(roBillingData)
+
+        const uniqueAdvisorNames = Array.from(
+          new Set(roBillingData.map((r: any) => r.serviceAdvisor).filter(Boolean))
+        ) as string[]
+
+        setAdvisors(uniqueAdvisorNames.sort())
+      } catch (err) {
+        console.error("Error loading advisors:", err)
+        setError("Failed to load advisors. Please ensure RO Billing data is uploaded.")
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    loadAdvisors()
+  }, [user?.email, user?.city])
+
+  // Fetch existing operations data
+  useEffect(() => {
+    const loadOperationsData = async () => {
+      if (!user?.email || !user?.city) return
+
+      try {
+        const response = await fetch(
+          getApiUrl(`/api/service-manager/advisor-operations?uploadedBy=${user.email}&city=${user.city}&dataDate=${selectedDate}&viewMode=${viewMode}`)
+        )
+
+        if (response.ok) {
+          const result = await response.json()
+          setOperationsData(result.data || [])
+        }
+      } catch (err) {
+        console.error("Error loading operations data:", err)
+      }
+    }
+
+    loadOperationsData()
+  }, [user?.email, user?.city, selectedDate, viewMode])
+
+  const handleFileUpload = async (advisorName: string, file: File) => {
+    if (!user?.email || !user?.city) return
+
+    setUploadingAdvisor(advisorName)
+
+    try {
+      const formData = new FormData()
+      formData.append("file", file)
+      formData.append("advisorName", advisorName)
+      formData.append("uploadedBy", user.email)
+      formData.append("city", user.city)
+      formData.append("dataDate", selectedDate)
+
+      const response = await fetch(
+        getApiUrl("/api/service-manager/advisor-operations/upload"),
+        {
+          method: "POST",
+          body: formData,
+        }
+      )
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || "Upload failed")
+      }
+
+      const result = await response.json()
+
+      alert(`✅ Upload successful!\n\nAdvisor: ${advisorName}\nDate: ${selectedDate}\nMatched Operations: ${result.matchedCount}\nTotal Amount: ₹${result.totalMatchedAmount.toLocaleString()}`)
+
+      if (fileInputRefs.current[advisorName]) {
+        fileInputRefs.current[advisorName]!.value = ""
+      }
+
+      const refreshResponse = await fetch(
+        getApiUrl(`/api/service-manager/advisor-operations?uploadedBy=${user.email}&city=${user.city}&dataDate=${selectedDate}&viewMode=${viewMode}`)
+      )
+
+      if (refreshResponse.ok) {
+        const refreshResult = await refreshResponse.json()
+        setOperationsData(refreshResult.data || [])
+      }
+    } catch (err: any) {
+      console.error("Upload error:", err)
+      alert(`❌ Upload failed: ${err.message}`)
+    } finally {
+      setUploadingAdvisor(null)
+    }
+  }
+
+  const handleFileChange = (advisorName: string, event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (file) {
+      handleFileUpload(advisorName, file)
+    }
+  }
+
+  const getAdvisorData = (advisorName: string): AdvisorOperation | undefined => {
+    return operationsData.find((op) => op.advisorName === advisorName)
+  }
+
+  const getOverallLabourAmount = (advisorName: string): number => {
+    return roData
+      .filter((r: any) => r.serviceAdvisor === advisorName)
+      .reduce((sum: number, r: any) => sum + (Number(r.labourAmt) || 0), 0)
+  }
+
+  const getWithoutVAS = (advisorName: string): number => {
+    const overallLabour = getOverallLabourAmount(advisorName)
+    const advisorData = getAdvisorData(advisorName)
+    const vasAmount = advisorData?.totalMatchedAmount || 0
+    return vasAmount - overallLabour
+  }
+
+  const filteredAdvisors = advisors.filter((advisor) =>
+    advisor.toLowerCase().includes(searchTerm.toLowerCase())
+  )
+
+  const totalVAS = operationsData.reduce((sum, op) => sum + (op.totalMatchedAmount || 0), 0)
+  const totalWithoutVAS = advisors.reduce((sum, advisor) => {
+    const advisorData = getAdvisorData(advisor)
+    if (advisorData) {
+      return sum + getWithoutVAS(advisor)
+    }
+    return sum
+  }, 0)
+
+  return (
+    <Card className="border-2 border-green-200 bg-gradient-to-br from-white to-green-50/30 shadow-lg">
+      <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50 border-b border-green-200">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="rounded-lg bg-green-100 p-2">
+              <Wrench className="h-5 w-5 text-green-600" />
+            </div>
+            <div>
+              <CardTitle className="text-xl text-gray-900">Advisor Operations Upload</CardTitle>
+              <CardDescription>Upload Excel files for each advisor to calculate VAS amounts</CardDescription>
+            </div>
+          </div>
+          <Badge variant="secondary" className="bg-green-100 text-green-800">
+            {advisors.length} Advisors
+          </Badge>
+        </div>
+
+        {/* Controls */}
+        <div className="mt-4 space-y-4">
+          <div className="flex items-center gap-4">
+            <div className="flex-1">
+              <label className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-green-600" />
+                Select Date:
+              </label>
+              <Input
+                type="date"
+                value={selectedDate}
+                max={new Date().toISOString().split('T')[0]}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+              />
+            </div>
+            <div className="flex-1">
+              <label className="text-sm font-medium text-gray-700 mb-2 block">
+                View Mode:
+              </label>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  onClick={() => setViewMode('cumulative')}
+                  className={`flex-1 ${
+                    viewMode === 'cumulative'
+                      ? 'bg-green-600 hover:bg-green-700 text-white'
+                      : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
+                  }`}
+                  size="sm"
+                >
+                  Cumulative
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => setViewMode('specific')}
+                  className={`flex-1 ${
+                    viewMode === 'specific'
+                      ? 'bg-green-600 hover:bg-green-700 text-white'
+                      : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
+                  }`}
+                  size="sm"
+                >
+                  Date-Specific
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {/* Search Bar */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+            <Input
+              type="text"
+              placeholder="Search advisors by name..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 w-full"
+            />
+          </div>
+        </div>
+      </CardHeader>
+
+      <CardContent className="p-6">
+        {/* Summary Stats - Moved to Top */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          <Card className="bg-gradient-to-br from-green-50 to-emerald-50 border-green-200">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="rounded-md bg-green-100 p-2">
+                  <FileText className="h-5 w-5 text-green-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-600">Total Advisors</p>
+                  <p className="text-2xl font-bold text-gray-900">{advisors.length}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-br from-blue-50 to-cyan-50 border-blue-200">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="rounded-md bg-blue-100 p-2">
+                  <CheckCircle className="h-5 w-5 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-600">Uploaded</p>
+                  <p className="text-2xl font-bold text-gray-900">{operationsData.length}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-br from-emerald-50 to-teal-50 border-emerald-200">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="rounded-md bg-emerald-100 p-2">
+                  <DollarSign className="h-5 w-5 text-emerald-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-600">Total VAS</p>
+                  <p className="text-2xl font-bold text-gray-900">₹{totalVAS.toLocaleString()}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-br from-purple-50 to-pink-50 border-purple-200">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="rounded-md bg-purple-100 p-2">
+                  <DollarSign className="h-5 w-5 text-purple-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-600">Total Without VAS</p>
+                  <p className="text-2xl font-bold text-gray-900">₹{totalWithoutVAS.toLocaleString()}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {isLoading ? (
+          <div className="text-center py-12">
+            <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-100 mb-4">
+              <div className="animate-spin">
+                <FileText className="h-6 w-6 text-green-600" />
+              </div>
+            </div>
+            <p className="text-gray-600">Loading advisors...</p>
+          </div>
+        ) : error ? (
+          <div className="bg-red-50 border border-red-300 rounded-lg p-6 text-center">
+            <AlertCircle className="h-10 w-10 text-red-600 mx-auto mb-3" />
+            <p className="text-red-800 font-semibold">{error}</p>
+            <p className="text-red-700 text-sm mt-2">Please upload RO Billing data first to see advisors.</p>
+          </div>
+        ) : advisors.length === 0 ? (
+          <div className="bg-blue-50 border border-blue-300 rounded-lg p-8 text-center">
+            <FileText className="h-12 w-12 text-blue-600 mx-auto mb-4" />
+            <p className="text-gray-800 font-semibold text-lg">No advisors found</p>
+            <p className="text-gray-600 text-sm mt-2">Please upload RO Billing data first to see advisors and their operations.</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Table */}
+            <div className="overflow-x-auto rounded-lg border border-gray-200">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-gradient-to-r from-green-600 to-emerald-600">
+                    <th className="text-left py-4 px-4 font-bold text-white border-r border-green-500 w-1/4">
+                      Advisor Name
+                    </th>
+                    <th className="text-left py-4 px-4 font-bold text-white border-r border-green-500 w-1/4">
+                      Upload Excel File
+                    </th>
+                    <th className="text-right py-4 px-4 font-bold text-white border-r border-green-500 w-1/4">
+                      VAS
+                    </th>
+                    <th className="text-right py-4 px-4 font-bold text-white w-1/4">
+                      Without VAS
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredAdvisors.map((advisor, index) => {
+                    const advisorData = getAdvisorData(advisor)
+                    const isUploading = uploadingAdvisor === advisor
+
+                    return (
+                      <tr
+                        key={advisor}
+                        className={`border-b hover:bg-green-50/50 transition-colors ${
+                          index % 2 === 0 ? "bg-white" : "bg-gray-50"
+                        }`}
+                      >
+                        <td className="py-4 px-4 border-r border-gray-200">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
+                              <span className="text-green-700 font-bold text-sm">
+                                {advisor.charAt(0).toUpperCase()}
+                              </span>
+                            </div>
+                            <span className="font-semibold text-gray-900">{advisor}</span>
+                          </div>
+                        </td>
+
+                        <td className="py-4 px-4 border-r border-gray-200">
+                          <div className="space-y-2">
+                            <input
+                              type="file"
+                              ref={(el) => {
+                                fileInputRefs.current[advisor] = el
+                              }}
+                              accept=".xlsx,.xls"
+                              onChange={(e) => handleFileChange(advisor, e)}
+                              disabled={isUploading}
+                              className="hidden"
+                              id={`file-${advisor}`}
+                            />
+                            <label htmlFor={`file-${advisor}`}>
+                              <Button
+                                type="button"
+                                onClick={() => fileInputRefs.current[advisor]?.click()}
+                                disabled={isUploading}
+                                className="bg-green-600 hover:bg-green-700 text-white w-full"
+                                size="sm"
+                              >
+                                {isUploading ? (
+                                  <>
+                                    <div className="animate-spin mr-2 h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+                                    Uploading...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Upload className="mr-2 h-4 w-4" />
+                                    {advisorData ? "Re-upload" : "Upload"}
+                                  </>
+                                )}
+                              </Button>
+                            </label>
+                            {advisorData?.fileName && (
+                              <div className="flex items-center gap-2 text-xs text-gray-600">
+                                <CheckCircle className="h-3 w-3 text-green-600" />
+                                <span className="truncate">{advisorData.fileName}</span>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+
+                        <td className="py-4 px-4 border-r border-gray-200 text-right">
+                          {advisorData ? (
+                            <div className="space-y-1">
+                              <div className="text-xl font-bold text-green-700">
+                                ₹{advisorData.totalMatchedAmount.toLocaleString()}
+                              </div>
+                              {advisorData.dataDate && (
+                                <div className="text-xs text-gray-500">
+                                  Data: {new Date(advisorData.dataDate).toLocaleDateString()}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-gray-400 text-sm">No data</span>
+                          )}
+                        </td>
+
+                        <td className="py-4 px-4 text-right">
+                          {advisorData ? (
+                            (() => {
+                              const overallLabour = getOverallLabourAmount(advisor)
+                              const withoutVAS = getWithoutVAS(advisor)
+                              
+                              return (
+                                <div className="space-y-1">
+                                  <div className="text-xl font-bold text-blue-700">
+                                    ₹{withoutVAS.toLocaleString()}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    Labour: ₹{overallLabour.toLocaleString()}
+                                  </div>
+                                </div>
+                              )
+                            })()
+                          ) : (
+                            <span className="text-gray-400 text-sm">No data</span>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
 }
 
 export default function SMDashboard() {
@@ -485,6 +960,11 @@ export default function SMDashboard() {
   }
 
   const renderSpecificDataView = () => {
+    // For operations, always show the advisor operations interface
+    if (selectedDataType === "operations") {
+      return <AdvisorOperationsSection user={user} />
+    }
+
     if (!dashboardData?.data || dashboardData.data.length === 0) {
       return (
         <Card className="border-gray-200">
@@ -653,7 +1133,12 @@ export default function SMDashboard() {
           // Group data by date and service advisor with work types
           const dateGroups: Record<string, Record<string, { ros: number; labour: number; parts: number; total: number; workTypes: Record<string, number> }>> = {}
           
-          dashboardData.data.forEach((record: any) => {
+          // Filter out Accidental Repair records for Service Advisor Performance
+          const filteredData = dashboardData.data.filter((record: any) => 
+            !record.workType?.toLowerCase().includes('accidental repair')
+          );
+
+          filteredData.forEach((record: any) => {
             const date = record.billDate || 'Unknown'
             const advisor = record.serviceAdvisor || 'Unknown'
             const labourAmt = record.labourAmt || 0
@@ -751,29 +1236,60 @@ export default function SMDashboard() {
                   {/* Date Selector with Overall Toggle */}
                   <div className="flex items-center gap-3">
                     <Calendar className="h-5 w-5 text-gray-600" />
-                    <Select 
-                      value={selectedDate} 
-                      onValueChange={setSelectedDate}
-                      disabled={showOverall}
-                    >
-                      <SelectTrigger className={`w-full max-w-md h-11 border-2 bg-white transition-colors ${
-                        showOverall 
-                          ? 'border-gray-300 opacity-50 cursor-not-allowed' 
-                          : 'border-blue-300 hover:border-blue-400'
-                      }`}>
-                        <SelectValue placeholder="Select date..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {allDates.map(date => (
-                          <SelectItem key={date} value={date}>
-                            <div className="flex items-center gap-2">
-                              <Calendar className="h-4 w-4 text-blue-600" />
-                              <span>{date}</span>
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className={`w-full max-w-md h-11 border-2 bg-white transition-colors justify-start text-left font-normal ${
+                            showOverall 
+                              ? 'border-gray-300 opacity-50 cursor-not-allowed' 
+                              : 'border-blue-300 hover:border-blue-400'
+                          }`}
+                          disabled={showOverall}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {selectedDate === "latest" ? "Latest Date" : selectedDate}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <div className="p-3">
+                          <div className="text-sm font-medium text-gray-900 mb-3">📅 Available Dates</div>
+                          <div className="grid gap-1 max-h-60 overflow-y-auto">
+                            <Button
+                              variant={selectedDate === "latest" ? "default" : "ghost"}
+                              className="justify-start h-8 px-2 text-sm"
+                              onClick={() => setSelectedDate("latest")}
+                            >
+                              <div className="flex items-center justify-between w-full">
+                                <span>📍 Latest Date</span>
+                                <Badge variant="secondary" className="ml-2 text-xs">
+                                  Auto
+                                </Badge>
+                              </div>
+                            </Button>
+                            {allDates.map(date => {
+                              const advisorCount = Object.keys(dateGroups[date] || {}).length
+                              const isSelected = selectedDate === date
+                              return (
+                                <Button
+                                  key={date}
+                                  variant={isSelected ? "default" : "ghost"}
+                                  className="justify-start h-8 px-2 text-sm"
+                                  onClick={() => setSelectedDate(date)}
+                                >
+                                  <div className="flex items-center justify-between w-full">
+                                    <span className="font-medium">📅 {date}</span>
+                                    <Badge variant="outline" className="ml-2 text-xs">
+                                      {advisorCount} advisors
+                                    </Badge>
+                                  </div>
+                                </Button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
                     
                     {/* Overall Toggle Button */}
                     <Button
@@ -1026,65 +1542,9 @@ export default function SMDashboard() {
           )
         })()}
         
-        {/* Operations Analysis - Top Services & Parts */}
+        {/* Advisor Operations Upload */}
         {selectedDataType === "operations" && (() => {
-          // Group by operation/part and calculate totals
-          const opGroups: Record<string, { count: number; amount: number }> = {}
-          dashboardData.data.forEach((record: any) => {
-            const op = record.opPartDescription || 'Unknown'
-            if (!opGroups[op]) {
-              opGroups[op] = { count: 0, amount: 0 }
-            }
-            opGroups[op].count += record.count || 0
-            opGroups[op].amount += record.amount || 0
-          })
-          
-          const topOperations = Object.entries(opGroups)
-            .sort((a, b) => b[1].amount - a[1].amount)
-            .slice(0, 10)
-          
-          return (
-            <Card className="border-2 border-purple-200 bg-gradient-to-br from-white to-purple-50/30 shadow-lg">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="rounded-lg bg-purple-100 p-2">
-                      <Wrench className="h-5 w-5 text-purple-600" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-xl">Top 10 Operations & Parts</CardTitle>
-                      <CardDescription>Most revenue-generating services and parts</CardDescription>
-                    </div>
-                  </div>
-                  <Button
-                    onClick={() => router.push("/dashboard/reports/operations")}
-                    className="bg-purple-600 hover:bg-purple-700 text-white"
-                  >
-                    View Full Report →
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {topOperations.map(([op, data], idx) => (
-                    <div key={idx} className="flex items-center gap-4 p-4 rounded-lg bg-white border-2 border-gray-200 hover:border-purple-300 hover:shadow-md transition-all">
-                      <div className="flex items-center justify-center w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-purple-600 text-white font-bold text-lg shadow-lg">
-                        {idx + 1}
-                      </div>
-                      <div className="flex-1">
-                        <p className="font-semibold text-gray-900 text-sm">{op}</p>
-                        <p className="text-xs text-gray-500 mt-1">Performed {data.count} times</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-lg font-bold text-purple-700">₹{(data.amount / 1000).toFixed(1)}K</p>
-                        <p className="text-xs text-gray-500">Revenue</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )
+          return <AdvisorOperationsSection user={user} />
         })()}
         
         {/* Warranty Claims Analysis */}
@@ -1278,126 +1738,6 @@ export default function SMDashboard() {
           )
         })()}
 
-        {/* Hidden Data Table - Removed
-        <Card className="border-gray-200 hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 bg-gray-50">
-                  {selectedDataType === "ro_billing" && (
-                    <>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Bill Date</th>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">RO Number</th>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Vehicle</th>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Customer</th>
-                      <th className="text-right py-3 px-4 font-semibold text-gray-700">Labour</th>
-                      <th className="text-right py-3 px-4 font-semibold text-gray-700">Parts</th>
-                      <th className="text-right py-3 px-4 font-semibold text-gray-700">Total</th>
-                    </>
-                  )}
-                  {selectedDataType === "operations" && (
-                    <>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">OP/Part Description</th>
-                      <th className="text-right py-3 px-4 font-semibold text-gray-700">Count</th>
-                      <th className="text-right py-3 px-4 font-semibold text-gray-700">Amount</th>
-                    </>
-                  )}
-                  {selectedDataType === "warranty" && (
-                    <>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Claim Date</th>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Claim Type</th>
-                      <th className="text-center py-3 px-4 font-semibold text-gray-700">Status</th>
-                      <th className="text-right py-3 px-4 font-semibold text-gray-700">Labour</th>
-                      <th className="text-right py-3 px-4 font-semibold text-gray-700">Part</th>
-                    </>
-                  )}
-                  {selectedDataType === "service_booking" && (
-                    <>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Service Advisor</th>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">B.T Date & Time</th>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Work Type</th>
-                      <th className="text-center py-3 px-4 font-semibold text-gray-700">Status</th>
-                    </>
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {dashboardData.data.slice(0, 50).map((row: any, idx: number) => (
-                  <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
-                    {selectedDataType === "ro_billing" && (
-                      <>
-                        <td className="py-3 px-4 text-gray-700">{row.billDate}</td>
-                        <td className="py-3 px-4 text-gray-700 font-mono text-xs">{row.roNumber}</td>
-                        <td className="py-3 px-4 text-gray-700">{row.vehicleNumber}</td>
-                        <td className="py-3 px-4 text-gray-700">{row.customerName}</td>
-                        <td className="py-3 px-4 text-right text-gray-700">₹{row.labourAmt?.toLocaleString()}</td>
-                        <td className="py-3 px-4 text-right text-gray-700">₹{row.partAmt?.toLocaleString()}</td>
-                        <td className="py-3 px-4 text-right font-semibold text-gray-900">
-                          ₹{row.totalAmount?.toLocaleString()}
-                        </td>
-                      </>
-                    )}
-                    {selectedDataType === "operations" && (
-                      <>
-                        <td className="py-3 px-4 text-gray-700">{row.opPartDescription}</td>
-                        <td className="py-3 px-4 text-right text-gray-700">{row.count}</td>
-                        <td className="py-3 px-4 text-right font-semibold text-gray-900">
-                          ₹{row.amount?.toLocaleString()}
-                        </td>
-                      </>
-                    )}
-                    {selectedDataType === "warranty" && (
-                      <>
-                        <td className="py-3 px-4 text-gray-700">{row.claimDate}</td>
-                        <td className="py-3 px-4 text-gray-700">{row.claimType}</td>
-                        <td className="py-3 px-4 text-center">
-                          <span
-                            className={`px-2 py-1 rounded-full text-xs ${
-                              row.status === "approved" || row.status === "Approved"
-                                ? "bg-green-100 text-green-700"
-                                : row.status === "rejected" || row.status === "Rejected"
-                                  ? "bg-red-100 text-red-700"
-                                  : "bg-yellow-100 text-yellow-700"
-                            }`}
-                          >
-                            {row.status}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-right text-gray-700">₹{row.labour?.toLocaleString()}</td>
-                        <td className="py-3 px-4 text-right text-gray-700">₹{row.part?.toLocaleString()}</td>
-                      </>
-                    )}
-                    {selectedDataType === "service_booking" && (
-                      <>
-                        <td className="py-3 px-4 text-gray-700">{row.serviceAdvisor}</td>
-                        <td className="py-3 px-4 text-gray-700">{row.btDateTime}</td>
-                        <td className="py-3 px-4 text-gray-700">{row.workType}</td>
-                        <td className="py-3 px-4 text-center">
-                          <span
-                            className={`px-2 py-1 rounded-full text-xs ${
-                              row.status === "completed" || row.status === "Completed"
-                                ? "bg-green-100 text-green-700"
-                                : row.status === "cancelled" || row.status === "Cancelled"
-                                  ? "bg-red-100 text-red-700"
-                                  : "bg-blue-100 text-blue-700"
-                            }`}
-                          >
-                            {row.status}
-                          </span>
-                        </td>
-                      </>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {dashboardData.data.length > 50 && (
-            <div className="p-4 text-center text-sm text-gray-500 border-t border-gray-200">
-              Showing first 50 of {dashboardData.data.length} records
-            </div>
-          )}
-        </Card> */}
       </div>
     )
   }

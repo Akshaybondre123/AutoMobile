@@ -7,7 +7,7 @@ import { getApiUrl } from '@/lib/config';
 import { 
   ArrowLeft, Users, DollarSign, Wrench, 
   TrendingUp, IndianRupee, Package,
-  MapPin, Download, Search, ChevronDown, ChevronUp
+  MapPin, Download, Search, ChevronDown, ChevronUp, Car, Filter
 } from 'lucide-react';
 
 interface Advisor {
@@ -16,6 +16,8 @@ interface Advisor {
   rovasAmount: number;
   partAmount: number;
   operationCount: number;
+  workType?: string;
+  isBodyshop?: boolean;
 }
 
 const AdvisorsPage = () => {
@@ -29,6 +31,7 @@ const AdvisorsPage = () => {
   const [advisorsData, setAdvisorsData] = useState<Advisor[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showBodyshop, setShowBodyshop] = useState(false);
 
   // Fetch real advisor data from RO Billing and Operations
   useEffect(() => {
@@ -64,24 +67,26 @@ const AdvisorsPage = () => {
 
         if (roBillingData && Array.isArray(roBillingData.data)) {
           // Group RO Billing by service advisor
-          const advisorMap: Record<string, { ros: number; rovasAmount: number; partAmount: number }> = {};
+          const advisorMap: Record<string, { ros: number; rovasAmount: number; partAmount: number; workTypes: Record<string, number> }> = {};
 
           roBillingData.data.forEach((record: any) => {
-            const advisor = record.serviceAdvisor || 'Unknown';
-            const labourAmt = record.labourAmt || 0;
-            const labourTax = record.labourTax || 0;
-            const partAmt = record.partAmt || 0;
+            const advisor = record.serviceAdvisor;
+            const workType = record.workType || 'Unknown';
+            if (!advisor) return;
             
-            // Calculate ROVas Amount (Labour Amount) - same logic as SM dashboard
-            const rovasAmount = labourAmt + labourTax; // Include tax for ROVas amount
-
             if (!advisorMap[advisor]) {
-              advisorMap[advisor] = { ros: 0, rovasAmount: 0, partAmount: 0 };
+              advisorMap[advisor] = { ros: 0, rovasAmount: 0, partAmount: 0, workTypes: {} };
             }
-
+            
             advisorMap[advisor].ros += 1;
-            advisorMap[advisor].rovasAmount += rovasAmount;
-            advisorMap[advisor].partAmount += partAmt;
+            advisorMap[advisor].rovasAmount += Number(record.labourAmt) || 0;
+            advisorMap[advisor].partAmount += Number(record.partAmt) || 0;
+            
+            // Track work types
+            if (!advisorMap[advisor].workTypes[workType]) {
+              advisorMap[advisor].workTypes[workType] = 0;
+            }
+            advisorMap[advisor].workTypes[workType] += 1;
           });
 
           // Create operations map for operation count only
@@ -97,12 +102,22 @@ const AdvisorsPage = () => {
           // Convert to advisor array with merged data
           const advisors: Advisor[] = Object.entries(advisorMap).map(([name, stats]) => {
             const operationData = operationsMap[name] || { operationCount: 0 };
+            // Determine if this advisor is bodyshop based on work types
+            const workTypes = Object.keys(stats.workTypes || {});
+            const isBodyshop = workTypes.some(workType => 
+              workType.toLowerCase().includes('accidental repair') ||
+              workType.toLowerCase().includes('bodyshop') ||
+              workType.toLowerCase().includes('accident')
+            );
+            
             return {
               name,
               ros: stats.ros,
               rovasAmount: stats.rovasAmount, // Now from RO Billing labour amount
               partAmount: stats.partAmount,
-              operationCount: operationData.operationCount
+              operationCount: operationData.operationCount,
+              workType: workTypes.join(', '),
+              isBodyshop
             };
           });
 
@@ -141,6 +156,13 @@ const AdvisorsPage = () => {
 
   const getSortedData = () => {
     let filteredData = [...advisorsData];
+
+    // Filter by bodyshop toggle
+    if (showBodyshop) {
+      filteredData = filteredData.filter(advisor => advisor.isBodyshop);
+    } else {
+      filteredData = filteredData.filter(advisor => !advisor.isBodyshop);
+    }
 
     // Filter by search term
     if (searchTerm) {
@@ -293,8 +315,40 @@ const AdvisorsPage = () => {
             </div>
           </div>
 
-          {/* Search */}
+          {/* Filter Toggle and Search */}
           <div className="bg-white rounded-lg p-3 shadow mt-3">
+            {/* Bodyshop Filter Toggle */}
+            <div className="flex items-center justify-between mb-3 pb-3 border-b border-gray-200">
+              <div className="flex items-center gap-3">
+                <Filter className="h-4 w-4 text-gray-600" />
+                <span className="text-sm font-medium text-gray-700">Filter by Type:</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowBodyshop(false)}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                    !showBodyshop 
+                      ? 'bg-blue-100 text-blue-700 border border-blue-200' 
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  <Users className="h-3 w-3" />
+                  Service Advisors
+                </button>
+                <button
+                  onClick={() => setShowBodyshop(true)}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                    showBodyshop 
+                      ? 'bg-red-100 text-red-700 border border-red-200' 
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  <Car className="h-3 w-3" />
+                  Bodyshop
+                </button>
+              </div>
+            </div>
+            
             <div className="relative">
               <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-3 w-3 text-gray-400" />
               <input
@@ -333,13 +387,13 @@ const AdvisorsPage = () => {
                     </th>
                     <th className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
                       <div className="flex items-center gap-1 cursor-pointer justify-center" onClick={() => handleSort('ros')}>
-                        <span>ROs</span>
+                        <span className="normal-case">ROs</span>
                         <SortIcon columnKey="ros" />
                       </div>
                     </th>
                     <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
                       <div className="flex items-center gap-1 cursor-pointer justify-end" onClick={() => handleSort('rovasAmount')}>
-                        <span>ROVas Amount</span>
+                        <span className="normal-case">RO With Vas Amount</span>
                         <SortIcon columnKey="rovasAmount" />
                       </div>
                     </th>

@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Target, TrendingUp, AlertCircle, CheckCircle, Calendar, Search, X, ChevronDown, ChevronUp, Users } from "lucide-react"
+import { Target, TrendingUp, AlertCircle, CheckCircle, Calendar, Search, X, ChevronDown, ChevronUp, Users, BarChart3, DollarSign, Car, Wrench, Award, Activity, Filter, Eye, EyeOff } from "lucide-react"
 
 const GM_TARGETS_KEY = "gm_field_targets_v1"
 const ADVISOR_ASSIGNMENTS_KEY = "advisor_field_targets_v1"
@@ -29,31 +29,106 @@ function remainingWorkingDaysFromToday() {
   return count
 }
 
-// Dropdown component for click details
-const MetricDropdown = ({ metric, target, achieved, shortfall, perDay, isOpen }) => (
-  <div className={`absolute z-50 bg-gray-900 text-white p-3 rounded-lg shadow-xl min-w-[220px] top-full left-1/2 transform -translate-x-1/2 mt-2 transition-all duration-200 ${isOpen ? 'block' : 'hidden'}`}>
-    <div className="text-sm font-semibold mb-2 border-b border-gray-700 pb-1">{metric}</div>
-    <div className="space-y-1 text-xs">
-      <div className="flex justify-between">
-        <span>Target:</span>
-        <span className="font-bold">{target.toLocaleString()}</span>
-      </div>
-      <div className="flex justify-between">
-        <span>Achieved:</span>
-        <span className="font-bold text-green-400">{achieved.toLocaleString()}</span>
-      </div>
-      <div className="flex justify-between">
-        <span>Shortfall:</span>
-        <span className="font-bold text-orange-400">{shortfall.toLocaleString()}</span>
-      </div>
-      <div className="flex justify-between">
-        <span>Per Day Rate:</span>
-        <span className="font-bold text-purple-400">{perDay.toLocaleString()}</span>
+// Professional metric card component
+const MetricCard = ({ metric, target, achieved, shortfall, perDay, isOpen, onClick }: {
+  metric: string;
+  target: number;
+  achieved: number;
+  shortfall: number;
+  perDay: number;
+  isOpen: boolean;
+  onClick: () => void;
+}) => {
+  const percentage = target > 0 ? (achieved / target) * 100 : 0;
+  const isOnTrack = percentage >= 80;
+  const isExceeded = percentage >= 100;
+
+  return (
+    <div className="relative">
+      <div 
+        className={`p-4 rounded-xl border-2 cursor-pointer transition-all duration-300 hover:shadow-lg ${
+          isExceeded 
+            ? 'bg-gradient-to-br from-emerald-50 to-green-50 border-emerald-200 hover:border-emerald-300' 
+            : isOnTrack 
+            ? 'bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200 hover:border-blue-300'
+            : 'bg-gradient-to-br from-orange-50 to-red-50 border-orange-200 hover:border-orange-300'
+        }`}
+        onClick={onClick}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between mb-3">
+          <div className={`p-2 rounded-lg ${
+            isExceeded ? 'bg-emerald-100' : isOnTrack ? 'bg-blue-100' : 'bg-orange-100'
+          }`}>
+            {isExceeded ? (
+              <Award className={`h-4 w-4 text-emerald-600`} />
+            ) : isOnTrack ? (
+              <TrendingUp className={`h-4 w-4 text-blue-600`} />
+            ) : (
+              <AlertCircle className={`h-4 w-4 text-orange-600`} />
+            )}
+          </div>
+          {isOpen ? (
+            <ChevronUp className="h-4 w-4 text-gray-500" />
+          ) : (
+            <ChevronDown className="h-4 w-4 text-gray-500" />
+          )}
+        </div>
+
+        {/* Main Numbers */}
+        <div className="space-y-2">
+          <div className="flex items-baseline justify-between">
+            <span className="text-2xl font-bold text-gray-900">{achieved.toLocaleString()}</span>
+            <span className="text-sm text-gray-600">/ {target.toLocaleString()}</span>
+          </div>
+          
+          {/* Progress Bar */}
+          <div className="w-full bg-gray-200 rounded-full h-2">
+            <div 
+              className={`h-2 rounded-full transition-all duration-500 ${
+                isExceeded ? 'bg-emerald-500' : isOnTrack ? 'bg-blue-500' : 'bg-orange-500'
+              }`}
+              style={{ width: `${Math.min(percentage, 100)}%` }}
+            />
+          </div>
+          
+          <div className="flex justify-between text-xs">
+            <span className={`font-medium ${
+              isExceeded ? 'text-emerald-600' : isOnTrack ? 'text-blue-600' : 'text-orange-600'
+            }`}>
+              {percentage.toFixed(1)}%
+            </span>
+            {shortfall > 0 && (
+              <span className="text-red-600 font-medium">
+                Short: {shortfall.toLocaleString()}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Expanded Details */}
+        {isOpen && (
+          <div className="mt-4 pt-3 border-t border-gray-200 space-y-2">
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div className="bg-white/60 rounded-lg p-2">
+                <div className="text-gray-600">Daily Target</div>
+                <div className="font-bold text-gray-900">{perDay.toLocaleString()}</div>
+              </div>
+              <div className="bg-white/60 rounded-lg p-2">
+                <div className="text-gray-600">Status</div>
+                <div className={`font-bold ${
+                  isExceeded ? 'text-emerald-600' : isOnTrack ? 'text-blue-600' : 'text-orange-600'
+                }`}>
+                  {isExceeded ? 'Exceeded' : isOnTrack ? 'On Track' : 'Behind'}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
-    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 border-8 border-transparent border-b-gray-900"></div>
-  </div>
-)
+  );
+};
 
 // Format numbers to remove decimals and format with commas
 const formatNumber = (num: number) => {
@@ -318,14 +393,50 @@ export default function AdvisorTargetsReportPage() {
     ? advisors.filter(advisor => selectedAdvisors.includes(advisor.name))
     : advisors
 
-  // Metrics configuration
+  // Professional metrics configuration
   const metrics = [
-    { key: "labour", label: "Labour", icon: "💼" },
-    { key: "parts", label: "Parts", icon: "🔧" },
-    { key: "totalVehicles", label: "Total Vehicles", icon: "🚗" },
-    { key: "paidService", label: "Paid Service", icon: "💳" },
-    { key: "freeService", label: "Free Service", icon: "🎁" },
-    { key: "rr", label: "R&R", icon: "🔄" },
+    { 
+      key: "labour", 
+      label: "Labour Revenue", 
+      icon: <DollarSign className="h-5 w-5" />,
+      color: "emerald",
+      description: "Total labour revenue generated"
+    },
+    { 
+      key: "parts", 
+      label: "Parts Revenue", 
+      icon: <Wrench className="h-5 w-5" />,
+      color: "blue",
+      description: "Total parts revenue generated"
+    },
+    { 
+      key: "totalVehicles", 
+      label: "Total Vehicles", 
+      icon: <Car className="h-5 w-5" />,
+      color: "purple",
+      description: "Total vehicles serviced"
+    },
+    { 
+      key: "paidService", 
+      label: "Paid Services", 
+      icon: <BarChart3 className="h-5 w-5" />,
+      color: "indigo",
+      description: "Number of paid service jobs"
+    },
+    { 
+      key: "freeService", 
+      label: "Free Services", 
+      icon: <CheckCircle className="h-5 w-5" />,
+      color: "green",
+      description: "Number of free service jobs"
+    },
+    { 
+      key: "rr", 
+      label: "Running Repairs", 
+      icon: <Activity className="h-5 w-5" />,
+      color: "orange",
+      description: "Number of running repair jobs"
+    }
   ]
 
   return (
@@ -506,105 +617,98 @@ export default function AdvisorTargetsReportPage() {
                   </div>
                 )}
 
-                {/* Consolidated Table */}
+                {/* Professional Advisor Grid */}
                 {displayAdvisors.length > 0 ? (
-                  <div className="overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
-                    <table className="w-full min-w-[600px]">
-                      <thead>
-                        <tr className="bg-gradient-to-r from-blue-600 to-indigo-600">
-                          <th className="text-left py-3 px-3 font-bold text-white text-sm border-r border-blue-500 sticky left-0 bg-blue-600 z-10 w-32">
-                            Metrics
-                          </th>
-                          {displayAdvisors.map((advisor, index) => (
-                            <th 
-                              key={advisor.name} 
-                              className="text-center py-3 px-3 font-bold text-white text-sm border-r border-blue-500 last:border-r-0 min-w-[120px]"
-                            >
-                              {advisor.name}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {metrics.map((metric, metricIndex) => (
-                          <tr 
-                            key={metric.key}
-                            className={`hover:bg-blue-50/50 transition-colors ${
-                              metricIndex < metrics.length - 1 ? 'border-b border-gray-200' : ''
-                            }`}
-                          >
-                            <td className="py-3 px-3 border-r border-gray-200 sticky left-0 bg-white z-10 w-32">
-                              <div className="flex items-center gap-2">
-                                <span className="text-lg">{metric.icon}</span>
-                                <span className="font-semibold text-gray-900 text-sm">{metric.label}</span>
+                  <div className="space-y-8">
+                    {displayAdvisors.map((advisor) => {
+                      const assign = assignments.find((as) => 
+                        as.advisorName === advisor.name && as.city === user?.city
+                      )
+                      
+                      const achieved = assign?.achieved || { 
+                        labour: 0, parts: 0, totalVehicles: 0, paidService: 0, freeService: 0, rr: 0 
+                      }
+
+                      return (
+                        <div key={advisor.name} className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
+                          {/* Advisor Header */}
+                          <div className="bg-gradient-to-r from-slate-800 to-slate-900 px-6 py-4">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center">
+                                  <Users className="h-5 w-5 text-white" />
+                                </div>
+                                <div>
+                                  <h3 className="text-xl font-bold text-white">{advisor.name}</h3>
+                                  <p className="text-slate-300 text-sm">Service Advisor</p>
+                                </div>
                               </div>
-                            </td>
-                            {displayAdvisors.map((advisor, advisorIndex) => {
-                              const assign = assignments.find((as) => 
-                                as.advisorName === advisor.name && as.city === user?.city
-                              )
-                              
-                              const achieved = assign?.achieved || { 
-                                labour: 0, parts: 0, totalVehicles: 0, paidService: 0, freeService: 0, rr: 0 
-                              }
-                              
-                              const target = assign?.[metric.key] ?? 0
-                              const ach = achieved[metric.key] ?? 0
-                              const shortfall = Math.max(0, target - ach)
-                              const perDay = Math.ceil(shortfall / Math.max(1, remainingDays))
-                              
-                              const cellId = `${advisor.name}-${metric.key}`
-                              const isOpen = openCell === cellId
-                              
-                              return (
-                                <td 
-                                  key={cellId} 
-                                  className="py-3 px-3 border-r border-gray-200 last:border-r-0 relative text-center min-w-[120px]"
-                                >
-                                  {/* Clickable cell content */}
-                                  <div 
-                                    className="cursor-pointer hover:bg-blue-50 rounded-md p-2 transition-colors"
-                                    onClick={() => setOpenCell(isOpen ? null : cellId)}
-                                  >
-                                    {/* Main display - Achieved/Target format */}
-                                    <div className="font-bold text-gray-900 text-sm flex items-center justify-center gap-1">
-                                      {formatNumber(ach)}/{formatNumber(target)}
-                                      {isOpen ? (
-                                        <ChevronUp className="h-3 w-3 text-blue-600" />
-                                      ) : (
-                                        <ChevronDown className="h-3 w-3 text-gray-400" />
-                                      )}
-                                    </div>
-                                    
-                                    {/* Shortfall indicator */}
-                                    {shortfall > 0 && (
-                                      <div className="text-xs text-orange-600 font-medium mt-1">
-                                        Short: {formatNumber(shortfall)}
+                              <div className="text-right">
+                                <p className="text-slate-300 text-xs">Overall Performance</p>
+                                <div className="flex items-center gap-2">
+                                  <div className="w-3 h-3 bg-green-400 rounded-full"></div>
+                                  <span className="text-white font-semibold">Active</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Metrics Grid */}
+                          <div className="p-6">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                              {metrics.map((metric) => {
+                                const target = assign?.[metric.key] ?? 0
+                                const ach = achieved[metric.key] ?? 0
+                                const shortfall = Math.max(0, target - ach)
+                                const perDay = Math.ceil(shortfall / Math.max(1, remainingDays))
+                                
+                                const cellId = `${advisor.name}-${metric.key}`
+                                const isOpen = openCell === cellId
+
+                                return (
+                                  <div key={metric.key} className="relative">
+                                    <div className="bg-gradient-to-br from-gray-50 to-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-all duration-200">
+                                      {/* Metric Header */}
+                                      <div className="flex items-center justify-between mb-3">
+                                        <div className={`p-2 rounded-lg bg-${metric.color}-100`}>
+                                          <div className={`text-${metric.color}-600`}>
+                                            {metric.icon}
+                                          </div>
+                                        </div>
+                                        <button
+                                          onClick={() => setOpenCell(isOpen ? null : cellId)}
+                                          className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+                                        >
+                                          {isOpen ? (
+                                            <EyeOff className="h-4 w-4 text-gray-500" />
+                                          ) : (
+                                            <Eye className="h-4 w-4 text-gray-500" />
+                                          )}
+                                        </button>
                                       </div>
-                                    )}
-                                    
-                                    {/* Per day rate */}
-                                    <div className="text-xs text-purple-600 font-medium mt-1">
-                                      Per Day: {formatNumber(perDay)}
+
+                                      {/* Metric Content */}
+                                      <div className="space-y-2">
+                                        <h4 className="font-semibold text-gray-900 text-sm">{metric.label}</h4>
+                                        <MetricCard
+                                          metric={metric.label}
+                                          target={target}
+                                          achieved={ach}
+                                          shortfall={shortfall}
+                                          perDay={perDay}
+                                          isOpen={isOpen}
+                                          onClick={() => setOpenCell(isOpen ? null : cellId)}
+                                        />
+                                      </div>
                                     </div>
                                   </div>
-                                  
-                                  {/* Click dropdown with all details */}
-                                  <MetricDropdown 
-                                    metric={metric.label}
-                                    target={target}
-                                    achieved={ach}
-                                    shortfall={shortfall}
-                                    perDay={perDay}
-                                    isOpen={isOpen}
-                                  />
-                                </td>
-                              )
-                            })}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
                 ) : (
                   <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
