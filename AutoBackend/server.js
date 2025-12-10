@@ -6,6 +6,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import uploadRoutes from "./routes/uploadRoutes.js";
+import excelUploadRoutes from "./routes/excelUploadRoutes.js";
 import serviceManagerRoutes from "./routes/serviceManagerRoutes.js";
 import rbacRoutes from "./routes/rbacRoutes.js";
 
@@ -16,11 +17,18 @@ const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Create uploads directory if it doesn't exist
+// Create uploads directories if they don't exist
 const uploadsDir = path.join(__dirname, "uploads");
+const excelUploadsDir = path.join(__dirname, "uploads", "excel");
+
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
   console.log("📁 Created uploads directory");
+}
+
+if (!fs.existsSync(excelUploadsDir)) {
+  fs.mkdirSync(excelUploadsDir, { recursive: true });
+  console.log("📁 Created Excel uploads directory");
 }
 
 app.use(cors());
@@ -28,6 +36,7 @@ app.use(express.json());
 
 // Register routes
 app.use("/api", uploadRoutes);
+app.use("/api/excel", excelUploadRoutes);
 app.use("/api/service-manager", serviceManagerRoutes);
 app.use("/api/rbac", rbacRoutes);
 

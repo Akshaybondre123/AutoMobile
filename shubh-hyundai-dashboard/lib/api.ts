@@ -285,14 +285,43 @@ export async function uploadServiceData(
   file: File,
   city: string,
   reportType: "ro_billing" | "operations" | "warranty" | "service_booking",
-): Promise<{ success: boolean; message: string }> {
-  // Simulate file upload
-  await new Promise((resolve) => setTimeout(resolve, 1000))
+  uploadedBy: string,
+  orgId: string,
+  showroomId: string
+): Promise<{ success: boolean; message: string; data?: any }> {
+  try {
+    const formData = new FormData()
+    formData.append('excelFile', file)
+    formData.append('file_type', reportType === 'operations' ? 'operations_part' : reportType === 'service_booking' ? 'booking_list' : reportType)
+    formData.append('uploaded_by', uploadedBy)
+    formData.append('org_id', orgId)
+    formData.append('showroom_id', showroomId)
 
-  // In production, this would send the file to your backend
-  return {
-    success: true,
-    message: `${reportType.replace(/_/g, " ")} file uploaded successfully for ${city}`,
+    const response = await fetch('http://localhost:5000/api/excel/upload', {
+      method: 'POST',
+      body: formData,
+    })
+
+    const result = await response.json()
+
+    if (result.success) {
+      return {
+        success: true,
+        message: result.message || `${reportType.replace(/_/g, " ")} file uploaded successfully`,
+        data: result.data
+      }
+    } else {
+      return {
+        success: false,
+        message: result.error || 'Upload failed'
+      }
+    }
+  } catch (error) {
+    console.error('Upload error:', error)
+    return {
+      success: false,
+      message: 'Network error during upload'
+    }
   }
 }
 
@@ -794,6 +823,73 @@ const serviceBookingData: ServiceBookingReport[] = [
     city: "Pune",
   },
 ]
+
+// Excel Upload Management Functions
+export interface UploadHistory {
+  _id: string
+  db_file_name: string
+  uploaded_file_name: string
+  rows_count: number
+  uploaded_by: string
+  uploaded_at: string
+  file_type: string
+  file_size: number
+  processing_status: string
+  error_message?: string
+}
+
+export interface UploadStats {
+  _id: string
+  totalFiles: number
+  totalRows: number
+  successfulUploads: number
+  failedUploads: number
+  lastUpload: string
+}
+
+export async function getUploadHistory(showroomId: string, fileType?: string): Promise<UploadHistory[]> {
+  try {
+    const url = new URL(`http://localhost:5000/api/excel/history/${showroomId}`)
+    if (fileType) {
+      url.searchParams.append('fileType', fileType)
+    }
+    
+    const response = await fetch(url.toString())
+    const result = await response.json()
+    
+    if (result.success) {
+      return result.data
+    } else {
+      console.error('Failed to fetch upload history:', result.error)
+      return []
+    }
+  } catch (error) {
+    console.error('Error fetching upload history:', error)
+    return []
+  }
+}
+
+export async function getUploadStats(showroomId: string, fileType?: string): Promise<UploadStats[]> {
+  try {
+    const url = new URL(`http://localhost:5000/api/excel/stats/${showroomId}`)
+    if (fileType) {
+      url.searchParams.append('fileType', fileType)
+    }
+    
+    const response = await fetch(url.toString())
+    const result = await response.json()
+    
+    if (result.success) {
+      return result.data
+    } else {
+      console.error('Failed to fetch upload stats:', result.error)
+      return []
+    }
+  } catch (error) {
+    console.error('Error fetching upload stats:', error)
+    return []
+  }
+}
 
 // Functions to get reports by type and city
 export async function getRoBillingReports(city?: string): Promise<ROBillingReport[]> {

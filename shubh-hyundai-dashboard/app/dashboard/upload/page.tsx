@@ -9,10 +9,14 @@ import {
   getOperationsReports,
   getWarrantyReports,
   getServiceBookingReports,
+  getUploadHistory,
+  getUploadStats,
   type ROBillingReport,
   type OperationsReport,
   type WarrantyReport,
   type ServiceBookingReport,
+  type UploadHistory,
+  type UploadStats,
 } from "@/lib/api"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -32,28 +36,28 @@ const reportSections: ReportSection[] = [
   {
     type: "ro_billing",
     title: "RO Billing Report",
-    description: "Repair Order billing details with labour and parts cost",
+    description: "Repair Order billing details with labour and parts cost. Required column: RO_No",
     icon: <FileText className="h-5 w-5" />,
     color: "blue",
   },
   {
     type: "operations",
-    title: "Operations Report",
-    description: "Service operations and technician time tracking",
+    title: "Operations/Part Report",
+    description: "Operations and part codes with descriptions. Required column: OP_Part_Code",
     icon: <FileText className="h-5 w-5" />,
     color: "green",
   },
   {
     type: "warranty",
     title: "Warranty Report",
-    description: "Warranty claims and approvals",
+    description: "Warranty claims and approvals. Required column: RO_No",
     icon: <FileText className="h-5 w-5" />,
     color: "purple",
   },
   {
     type: "service_booking",
-    title: "Service Booking List",
-    description: "Service bookings and scheduling information",
+    title: "Booking List Report",
+    description: "Service bookings and scheduling information. Required column: Reg_No",
     icon: <FileText className="h-5 w-5" />,
     color: "orange",
   },
@@ -83,6 +87,20 @@ export default function UploadPage() {
   const [operationsData, setOperationsData] = useState<OperationsReport[]>([])
   const [warrantyData, setWarrantyData] = useState<WarrantyReport[]>([])
   const [bookingData, setBookingData] = useState<ServiceBookingReport[]>([])
+  const [uploadHistory, setUploadHistory] = useState<UploadHistory[]>([])
+  const [uploadStats, setUploadStats] = useState<UploadStats[]>([])
+
+  const loadUploadData = async () => {
+    if (user?.city) {
+      const showroomId = "64f8a1b2c3d4e5f6a7b8c9d1" // Demo showroom ID
+      const [history, stats] = await Promise.all([
+        getUploadHistory(showroomId),
+        getUploadStats(showroomId),
+      ])
+      setUploadHistory(history)
+      setUploadStats(stats)
+    }
+  }
 
   useEffect(() => {
     const loadData = async () => {
@@ -97,6 +115,9 @@ export default function UploadPage() {
         setOperationsData(ops)
         setWarrantyData(war)
         setBookingData(booking)
+        
+        // Also load upload data
+        loadUploadData()
       }
     }
     loadData()
@@ -130,21 +151,43 @@ export default function UploadPage() {
 
   const handleUpload = async (reportType: ReportType) => {
     const file = files[reportType]
-    if (!file || !user?.city) return
+    if (!file || !user?.city || !user?.email) return
 
     setIsLoading((prev) => ({ ...prev, [reportType]: true }))
     try {
-      const result = await uploadServiceData(file, user.city, reportType)
+      // For demo purposes, using hardcoded IDs. In production, these would come from user context or API
+      const orgId = "64f8a1b2c3d4e5f6a7b8c9d0" // Demo org ID
+      const showroomId = "64f8a1b2c3d4e5f6a7b8c9d1" // Demo showroom ID
+      
+      const result = await uploadServiceData(
+        file, 
+        user.city, 
+        reportType, 
+        user.email, 
+        orgId, 
+        showroomId
+      )
+      
       if (result.success) {
-        setMessages((prev) => ({ ...prev, [reportType]: { type: "success", text: result.message } }))
+        setMessages((prev) => ({ 
+          ...prev, 
+          [reportType]: { 
+            type: "success", 
+            text: result.message + (result.data ? ` (${result.data.totalProcessed} rows processed using ${result.data.uploadCase})` : '')
+          } 
+        }))
         setFiles((prev) => ({ ...prev, [reportType]: null }))
+        
+        // Reload upload history after successful upload
+        loadUploadData()
       } else {
         setMessages((prev) => ({
           ...prev,
-          [reportType]: { type: "error", text: "Upload failed. Please try again." },
+          [reportType]: { type: "error", text: result.message || "Upload failed. Please try again." },
         }))
       }
     } catch (error) {
+      console.error('Upload error:', error)
       setMessages((prev) => ({
         ...prev,
         [reportType]: { type: "error", text: "An error occurred during upload" },
@@ -169,6 +212,16 @@ export default function UploadPage() {
       <div>
         <h1 className="text-3xl font-bold">Upload Service Reports</h1>
         <p className="text-muted-foreground mt-2">Upload Excel files for {user?.city} service center</p>
+        <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <h3 className="font-semibold text-blue-900 mb-2">📋 Upload Instructions</h3>
+          <ul className="text-sm text-blue-800 space-y-1">
+            <li>• <strong>File Format:</strong> Only Excel files (.xlsx, .xls) are supported</li>
+            <li>• <strong>File Size:</strong> Maximum 50MB per file</li>
+            <li>• <strong>Smart Processing:</strong> System automatically detects new, updated, or mixed data</li>
+            <li>• <strong>Required Columns:</strong> Each file type has specific required columns (see descriptions below)</li>
+            <li>• <strong>Data Handling:</strong> Duplicate records are updated, new records are inserted</li>
+          </ul>
+        </div>
       </div>
 
       {/* Upload Sections */}
@@ -253,6 +306,88 @@ export default function UploadPage() {
             </Card>
           )
         })}
+      </div>
+
+      {/* Upload History and Statistics */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Upload Statistics */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Upload Statistics</CardTitle>
+            <CardDescription>Summary of file uploads for {user?.city}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {uploadStats.length > 0 ? (
+                uploadStats.map((stat) => (
+                  <div key={stat._id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                    <div>
+                      <p className="font-semibold capitalize">{stat._id.replace('_', ' ')}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {stat.totalFiles} files • {stat.totalRows} rows
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-medium text-green-600">
+                        {stat.successfulUploads} successful
+                      </p>
+                      {stat.failedUploads > 0 && (
+                        <p className="text-sm font-medium text-red-600">
+                          {stat.failedUploads} failed
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-muted-foreground text-center py-4">No upload statistics available</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Recent Upload History */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Recent Uploads</CardTitle>
+            <CardDescription>Latest file uploads and their status</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {uploadHistory.slice(0, 5).map((upload) => (
+                <div key={upload._id} className="flex items-center justify-between p-3 border rounded-lg">
+                  <div className="flex-1">
+                    <p className="font-medium text-sm">{upload.uploaded_file_name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {upload.rows_count} rows • {(upload.file_size / 1024).toFixed(1)} KB
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(upload.uploaded_at).toLocaleDateString()} by {upload.uploaded_by}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        upload.processing_status === "completed"
+                          ? "bg-green-100 text-green-800"
+                          : upload.processing_status === "failed"
+                            ? "bg-red-100 text-red-800"
+                            : upload.processing_status === "processing"
+                              ? "bg-blue-100 text-blue-800"
+                              : "bg-gray-100 text-gray-800"
+                      }`}
+                    >
+                      {upload.processing_status}
+                    </span>
+                  </div>
+                </div>
+              ))}
+              {uploadHistory.length === 0 && (
+                <p className="text-muted-foreground text-center py-4">No upload history available</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Data Tables */}

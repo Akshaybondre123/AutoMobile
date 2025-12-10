@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useEffect, useState, useRef } from "react"
+import React, { useEffect, useState, useRef, useCallback } from "react"
 import { useAuth } from "@/lib/auth-context"
 import { usePermissions } from "@/hooks/usePermissions"
 import { Button } from "@/components/ui/button"
@@ -502,6 +502,8 @@ export default function SMDashboard() {
   const { user } = useAuth()
   const { hasPermission } = usePermissions()
   const router = useRouter()
+  
+  // Declare ALL useState hooks first (before any conditional logic)
   const [selectedDataType, setSelectedDataType] = useState<DataType>("average")
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -515,17 +517,61 @@ export default function SMDashboard() {
   const [showOverall, setShowOverall] = useState<boolean>(false)
   const [hoveredAdvisor, setHoveredAdvisor] = useState<string | null>(null)
   const [showWithTax, setShowWithTax] = useState<boolean>(false)
+  const [dataFetched, setDataFetched] = useState<Set<string>>(new Set())
+  
+  // Clear cache immediately to fetch all records (temporary for this fix)
+  useEffect(() => {
+    setDataFetched(new Set())
+    // Force a refresh by clearing any cached data
+    setDashboardData(null)
+    // Clear only dashboard-specific cache, not authentication
+    if (typeof window !== 'undefined') {
+      // Only clear dashboard-specific cache keys, not auth
+      const keysToRemove = []
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i)
+        if (key && (key.includes('dashboard') || key.includes('sm_') || key.includes('cache'))) {
+          keysToRemove.push(key)
+        }
+      }
+      keysToRemove.forEach(key => localStorage.removeItem(key))
+      
+      // Clear session storage dashboard cache
+      const sessionKeysToRemove = []
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const key = sessionStorage.key(i)
+        if (key && (key.includes('dashboard') || key.includes('sm_') || key.includes('cache'))) {
+          sessionKeysToRemove.push(key)
+        }
+      }
+      sessionKeysToRemove.forEach(key => sessionStorage.removeItem(key))
+    }
+    console.log('🔄 Dashboard cache cleared, forcing fresh data fetch')
+  }, [])
 
-  const fetchDashboardData = async (dataType: DataType) => {
+  // Function definitions (before useEffect hooks) - memoized to prevent infinite re-renders
+  const fetchDashboardData = useCallback(async (dataType: DataType) => {
     if (!user?.email || !user?.city) return
+    
+    // Check if this data type has already been fetched recently
+    const fetchKey = `${dataType}-${user.email}`
+    // Temporarily disable duplicate call prevention to force fresh data
+    // if (dataFetched.has(fetchKey)) {
+    //   console.log(`⏭️ Skipping duplicate API call for ${dataType}`)
+    //   return
+    // }
 
     setIsLoading(true)
     setError(null)
 
     try {
-      const response = await fetch(
-        getApiUrl(`/api/service-manager/dashboard-data?uploadedBy=${user.email}&city=${user.city}&dataType=${dataType}`)
-      )
+      const apiUrl = getApiUrl(`/api/service-manager/dashboard-data?uploadedBy=${user.email}&city=${user.city}&dataType=${dataType}`)
+      console.log('🔗 Making API call to:', apiUrl)
+      console.log('📧 User email:', user.email)
+      console.log('🏙️ User city:', user.city)
+      console.log('📊 Data type:', dataType)
+      
+      const response = await fetch(apiUrl)
 
       if (!response.ok) {
         throw new Error("Failed to fetch data")
@@ -533,9 +579,11 @@ export default function SMDashboard() {
 
       const data = await response.json()
       
-      console.log('SM Dashboard Data Received:', data)
-      console.log('Data Type:', dataType)
-      console.log('Summary:', data?.summary)
+      console.log('✅ SM Dashboard Data Received:', data)
+      console.log('📈 Data Type:', dataType)
+      console.log('📊 Summary:', data?.summary)
+      console.log('📋 Data count:', data?.count)
+      console.log('📁 Uploads count:', data?.uploads?.length)
       
       // Ensure data has the correct structure
       if (data && typeof data === 'object') {
@@ -543,6 +591,9 @@ export default function SMDashboard() {
           ...data,
           data: Array.isArray(data.data) ? data.data : []
         })
+        
+        // Mark this data type as fetched
+        setDataFetched(prev => new Set(prev).add(fetchKey))
       } else {
         setDashboardData(null)
       }
@@ -552,72 +603,138 @@ export default function SMDashboard() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [user?.email, user?.city, dataFetched])
 
+  // ALL useEffect hooks must be declared here (before any conditional returns)
+  
+  // Check if user has permission to access SM dashboard
   useEffect(() => {
-    if (selectedDataType) {
-      fetchDashboardData(selectedDataType)
+    if (!hasPermission('can_access_sm_dashboard')) {
+      console.log('❌ User does not have permission to access SM dashboard')
+      // Don't redirect automatically to prevent infinite loops
+      // Just show the access denied UI instead
+      return
     }
-  }, [selectedDataType, user?.email, user?.city])
+  }, [hasPermission])
 
-  // Fetch work type data for Average dashboard
+  // Clear fetch cache when user changes
+  useEffect(() => {
+    setDataFetched(new Set())
+  }, [user?.email])
+
+  // Fetch dashboard data when selectedDataType changes or component mounts
+  useEffect(() => {
+    if (selectedDataType && user?.email && user?.city && !isLoading && hasPermission('can_access_sm_dashboard')) {
+      // Add a small delay to prevent rapid successive calls
+      const timeoutId = setTimeout(() => {
+        fetchDashboardData(selectedDataType)
+      }, 100)
+      
+      return () => clearTimeout(timeoutId)
+    }
+  }, [selectedDataType, user?.email, user?.city]) // Add user dependencies to trigger on mount
+
+  // Fetch work type data for Average dashboard - only once when component mounts
   useEffect(() => {
     const fetchWorkTypeData = async () => {
-      if (!user?.email || !user?.city) return
+      if (!user?.email || !user?.city) {
+        console.log('⚠️ User email or city not available for work type data fetch')
+        return
+      }
       
       try {
-        const response = await fetch(
-          getApiUrl(`/api/service-manager/dashboard-data?uploadedBy=${user.email}&city=${user.city}&dataType=service_booking`)
-        )
+        console.log('🔄 Fetching work type data for user:', user.email)
+        const apiUrl = getApiUrl(`/api/service-manager/dashboard-data?uploadedBy=${user.email}&city=${user.city}&dataType=service_booking`)
+        console.log('🔗 Work type API URL:', apiUrl)
+        
+        const response = await fetch(apiUrl)
         
         if (response.ok) {
           const result = await response.json()
           const bookingData = Array.isArray(result.data) ? result.data : []
           
           // Count work types from actual data
-          const paidCount = bookingData.filter((row: any) => 
-            row.workType?.toLowerCase().includes("paid")
-          ).length
-          
-          const freeCount = bookingData.filter((row: any) => 
-            row.workType?.toLowerCase().includes("free")
-          ).length
-          
-          const runningCount = bookingData.filter((row: any) => 
-            row.workType?.toLowerCase().includes("running")
-          ).length
-          
+          const workTypeCounts = bookingData.reduce((acc: any, record: any) => {
+            const workType = record.workType || 'Unknown'
+            acc[workType] = (acc[workType] || 0) + 1
+            return acc
+          }, {})
+
           setWorkTypeData([
-            { name: 'Paid Service', value: paidCount, color: '#0ea5e9', description: 'Regular paid services' },
-            { name: 'Free Service', value: freeCount, color: '#10b981', description: 'Complimentary services' },
-            { name: 'Running Repair', value: runningCount, color: '#f59e0b', description: 'Ongoing repairs' },
+            { name: 'Paid Service', value: workTypeCounts['Paid Service'] || 0, color: '#0ea5e9', description: 'Regular paid services' },
+            { name: 'Free Service', value: workTypeCounts['Free Service'] || 0, color: '#10b981', description: 'Complimentary services' },
+            { name: 'Running Repair', value: workTypeCounts['Running Repair'] || 0, color: '#f59e0b', description: 'Ongoing repairs' },
           ])
         }
-      } catch (err) {
-        console.error('Failed to fetch work type data:', err)
+      } catch (error) {
+        console.error('❌ Error fetching work type data:', error)
+        console.error('❌ Error details:', {
+          userEmail: user?.email,
+          userCity: user?.city,
+          errorMessage: error instanceof Error ? error.message : 'Unknown error'
+        })
+        // Set default work type data on error
+        setWorkTypeData([
+          { name: 'Paid Service', value: 0, color: '#3b82f6', description: 'Regular paid services' },
+          { name: 'Free Service', value: 0, color: '#10b981', description: 'Complimentary services' },
+          { name: 'Running Repair', value: 0, color: '#f59e0b', description: 'Ongoing repairs' },
+          { name: 'Accidental Repair', value: 0, color: '#ef4444', description: 'Accident-related repairs' }
+        ])
       }
     }
-    
-    fetchWorkTypeData()
-  }, [user?.email, user?.city])
+
+    // Only fetch once when user data is available
+    if (user?.email && user?.city) {
+      fetchWorkTypeData()
+    }
+  }, []) // Empty dependency array - only run once
 
   // Set default to latest date for RO Billing
   useEffect(() => {
     if (selectedDataType === "ro_billing" && dashboardData?.data && selectedDate === "latest") {
       const dateGroups: Record<string, any> = {}
       dashboardData.data.forEach((record: any) => {
-        const date = record.billDate || 'Unknown'
+        const date = record.billDate || record.uploadDate || 'Unknown'
         if (!dateGroups[date]) {
-          dateGroups[date] = true
+          dateGroups[date] = []
         }
+        dateGroups[date].push(record)
       })
-      const allDates = Object.keys(dateGroups).sort()
-      const latestDate = allDates[allDates.length - 1]
-      if (latestDate) {
+      
+      const latestDate = Object.keys(dateGroups).sort().reverse()[0]
+      if (latestDate && latestDate !== "Unknown") {
         setSelectedDate(latestDate)
       }
     }
   }, [selectedDataType, dashboardData, selectedDate])
+
+  // Show loading or access denied if no permission
+  if (!hasPermission('can_access_sm_dashboard')) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Card className="w-96">
+          <CardHeader>
+            <CardTitle className="text-center text-red-600">Access Denied</CardTitle>
+          </CardHeader>
+          <CardContent className="text-center">
+            <p className="text-gray-600 mb-4">
+              You don't have permission to access the Service Manager Dashboard.
+            </p>
+            <p className="text-sm text-gray-500 mb-6">
+              Please contact your administrator to request access.
+            </p>
+            <Button 
+              onClick={() => router.push('/dashboard')}
+              variant="outline"
+              className="w-full"
+            >
+              Go Back to Main Dashboard
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
   const renderMetricCard = (title: string, value: string | number, icon: React.ReactNode, color: string) => {
     const colorClasses: Record<string, { bg: string; icon: string; gradient: string; border: string }> = {
@@ -728,11 +845,28 @@ export default function SMDashboard() {
   }
 
   const renderAverageView = () => {
+    if (isLoading) {
+      return (
+        <Card className="border-gray-200">
+          <CardContent className="p-12 text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading dashboard data...</p>
+          </CardContent>
+        </Card>
+      )
+    }
+    
     if (!dashboardData?.summary) {
       return (
         <Card className="border-gray-200">
           <CardContent className="p-12 text-center">
-            <p className="text-gray-600">No data available</p>
+            <p className="text-gray-600">No data available. Please refresh the page.</p>
+            <button 
+              onClick={() => window.location.reload()} 
+              className="mt-2 px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700"
+            >
+              Refresh Page
+            </button>
           </CardContent>
         </Card>
       )
@@ -761,7 +895,7 @@ export default function SMDashboard() {
           )}
           {renderMetricCard(
             "Warranty Amount",
-            `₹${((warranty?.totalClaimValue || 0) / 100000).toFixed(2)}L`,
+            `₹${(((warranty?.totalLabourAmount || 0) + (warranty?.totalPartAmount || 0)) / 100000).toFixed(2)}L`,
             <Shield className="h-5 w-5" />,
             "orange"
           )}
@@ -872,13 +1006,37 @@ export default function SMDashboard() {
               </div>
               <div className="flex items-center justify-between p-3 rounded-lg bg-gradient-to-r from-red-50 to-white border border-red-200">
                 <div>
-                  <p className="text-xs text-gray-600">Claim Amount</p>
+                  <p className="text-xs text-gray-600">Total Amount</p>
                   <p className="text-xl font-bold text-red-700">
-                    ₹{((warranty?.totalClaimValue || 0) / 100000).toFixed(1)}L
+                    ₹{(((warranty?.totalLabourAmount || 0) + (warranty?.totalPartAmount || 0)) / 100000).toFixed(2)}L
                   </p>
                 </div>
                 <div className="p-3 rounded-lg bg-red-100">
                   <DollarSign className="h-6 w-6 text-red-600" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex items-center justify-between p-3 rounded-lg bg-gradient-to-r from-blue-50 to-white border border-blue-200">
+                  <div>
+                    <p className="text-xs text-gray-600">Labour</p>
+                    <p className="text-lg font-bold text-blue-700">
+                      ₹{((warranty?.totalLabourAmount || 0) / 100000).toFixed(2)}L
+                    </p>
+                  </div>
+                  <div className="p-2 rounded-lg bg-blue-100">
+                    <TrendingUp className="h-5 w-5 text-blue-600" />
+                  </div>
+                </div>
+                <div className="flex items-center justify-between p-3 rounded-lg bg-gradient-to-r from-green-50 to-white border border-green-200">
+                  <div>
+                    <p className="text-xs text-gray-600">Parts</p>
+                    <p className="text-lg font-bold text-green-700">
+                      ₹{((warranty?.totalPartAmount || 0) / 100000).toFixed(2)}L
+                    </p>
+                  </div>
+                  <div className="p-2 rounded-lg bg-green-100">
+                    <BarChart3 className="h-5 w-5 text-green-600" />
+                  </div>
                 </div>
               </div>
             </CardContent>
@@ -1042,25 +1200,20 @@ export default function SMDashboard() {
         const totalCount = data.reduce((sum: number, row: any) => sum + (row.count || 0), 0)
         return { totalAmount, totalCount, count: data.length }
       } else if (selectedDataType === "warranty") {
-        const totalLabour = data.reduce((sum: number, row: any) => sum + (row.labour || 0), 0)
-        const totalPart = data.reduce((sum: number, row: any) => sum + (row.part || 0), 0)
-        const totalClaims = totalLabour + totalPart
-        const approved = data.filter((row: any) => row.status?.toLowerCase() === "approved").length
-        return { totalClaims, totalLabour, totalPart, approved, count: data.length }
+        // Use API summary data instead of calculating from raw data
+        const totalLabour = dashboardData.summary?.totalLabourAmount || 0
+        const totalPart = dashboardData.summary?.totalPartAmount || 0
+        const totalClaims = dashboardData.summary?.totalClaimAmount || 0
+        const totalCount = dashboardData.summary?.totalClaims || 0
+        return { totalClaims, totalLabour, totalPart, count: totalCount }
       } else if (selectedDataType === "service_booking") {
-        const completed = data.filter((row: any) => {
-          const status = row.status?.toLowerCase()
-          return status === "completed" || status === "close" || status === "closed"
-        }).length
-        const pending = data.filter((row: any) => {
-          const status = row.status?.toLowerCase()
-          return status === "pending" || status === "in progress"
-        }).length
-        const open = data.filter((row: any) => row.status?.toLowerCase() === "open").length
-        const cancelled = data.filter((row: any) => {
-          const status = row.status?.toLowerCase()
-          return status === "cancel" || status === "cancelled" || status === "canceled"
-        }).length
+        // Use API summary data for status breakdown
+        const statusBreakdown = dashboardData.summary?.statusBreakdown || []
+        
+        const completed = statusBreakdown.find(s => s.status?.toLowerCase() === "close")?.count || 0
+        const pending = statusBreakdown.find(s => s.status?.toLowerCase() === "in progress")?.count || 0
+        const open = statusBreakdown.find(s => s.status?.toLowerCase() === "open")?.count || 0
+        const cancelled = statusBreakdown.find(s => s.status?.toLowerCase() === "cancel")?.count || 0
         
         // Work type counts
         const paidService = data.filter((row: any) => row.workType?.toLowerCase().includes("paid")).length
@@ -1119,7 +1272,7 @@ export default function SMDashboard() {
           {selectedDataType === "warranty" && (
             <>
               {renderMetricCard("Total Claims", metrics.count, <Shield className="h-5 w-5" />, "blue")}
-              {renderMetricCard("Total Amount", `₹${((metrics.totalClaims || 0) / 100000).toFixed(2)}L`, <DollarSign className="h-5 w-5" />, "emerald")}
+              {renderMetricCard("Total Amount", `₹${(((metrics.totalLabour || 0) + (metrics.totalPart || 0)) / 100000).toFixed(2)}L`, <DollarSign className="h-5 w-5" />, "emerald")}
               {renderMetricCard("Labour", `₹${((metrics.totalLabour || 0) / 100000).toFixed(2)}L`, <TrendingUp className="h-5 w-5" />, "green")}
               {renderMetricCard("Parts", `₹${((metrics.totalPart || 0) / 100000).toFixed(2)}L`, <BarChart3 className="h-5 w-5" />, "orange")}
             </>
@@ -1135,15 +1288,15 @@ export default function SMDashboard() {
           )}
         </div>
 
-
         {/* Service Advisor Performance Table by Date - For RO Billing */}
         {selectedDataType === "ro_billing" && (() => {
           // Group data by date and service advisor with work types
           const dateGroups: Record<string, Record<string, { ros: number; labour: number; parts: number; total: number; workTypes: Record<string, number> }>> = {}
           
-          // Filter out Accidental Repair records for Service Advisor Performance
+          // Filter out Accidental Repair and Running Repair BodyCare records for Service Advisor Performance
           const filteredData = dashboardData.data.filter((record: any) => 
-            !record.workType?.toLowerCase().includes('accidental repair')
+            !record.workType?.toLowerCase().includes('accidental repair') &&
+            !record.workType?.toLowerCase().includes('running repair bodycare')
           );
 
           filteredData.forEach((record: any) => {
@@ -1424,21 +1577,314 @@ export default function SMDashboard() {
           )
         })()}
 
-        {/* Bodyshop - Accidental Repair Analysis */}
+        {/* RF Mechanical Performance Table by Date - For RO Billing */}
         {selectedDataType === "ro_billing" && (() => {
-          // Filter for Accidental Repair work type only
-          const accidentalRepairData = dashboardData.data.filter((record: any) => 
-            record.workType?.toLowerCase().includes('accidental repair')
-          )
+          // Group data by date and service advisor with work types - RF Mechanical only
+          const rfDateGroups: Record<string, Record<string, { ros: number; labour: number; parts: number; total: number; workTypes: Record<string, number> }>> = {}
+          
+          // Filter for RF Mechanical work type only
+          const rfMechanicalData = dashboardData.data.filter((record: any) => 
+            record.workType?.toLowerCase().includes('rf mechanical')
+          );
 
-          if (accidentalRepairData.length === 0) {
-            return null // Don't show if no accidental repair data
+          if (rfMechanicalData.length === 0) {
+            return null // Don't show if no RF Mechanical data
           }
 
-          // Group by advisor
-          const advisorStats: Record<string, { labour: number; parts: number; ros: number }> = {}
+          rfMechanicalData.forEach((record: any) => {
+            const date = record.billDate || 'Unknown'
+            const advisor = record.serviceAdvisor || 'Unknown'
+            const labourAmt = record.labourAmt || 0
+            const partAmt = record.partAmt || 0
+            const labourTax = record.labourTax || 0
+            const partTax = record.partTax || 0
+            const workType = record.workType || 'Unknown'
+            
+            // Calculate amounts based on tax toggle
+            const labour = showWithTax ? labourAmt + labourTax : labourAmt
+            const parts = showWithTax ? partAmt + partTax : partAmt
+            
+            if (!rfDateGroups[date]) {
+              rfDateGroups[date] = {}
+            }
+            
+            if (!rfDateGroups[date][advisor]) {
+              rfDateGroups[date][advisor] = { ros: 0, labour: 0, parts: 0, total: 0, workTypes: {} }
+            }
+            
+            rfDateGroups[date][advisor].ros += 1
+            rfDateGroups[date][advisor].labour += labour
+            rfDateGroups[date][advisor].parts += parts
+            rfDateGroups[date][advisor].total += labour + parts
+            
+            // Track work types
+            if (!rfDateGroups[date][advisor].workTypes[workType]) {
+              rfDateGroups[date][advisor].workTypes[workType] = 0
+            }
+            rfDateGroups[date][advisor].workTypes[workType] += 1
+          })
           
-          accidentalRepairData.forEach((record: any) => {
+          // Get all dates sorted
+          const rfAllDates = Object.keys(rfDateGroups).sort()
+          
+          // Calculate data based on selected date or overall toggle
+          const getRfDisplayData = () => {
+            if (showOverall) {
+              // Combine all advisors across all dates
+              const overallAdvisors: Record<string, { ros: number; labour: number; parts: number; total: number; workTypes: Record<string, number> }> = {}
+              
+              Object.values(rfDateGroups).forEach(dateAdvisors => {
+                Object.entries(dateAdvisors).forEach(([advisor, data]) => {
+                  if (!overallAdvisors[advisor]) {
+                    overallAdvisors[advisor] = { ros: 0, labour: 0, parts: 0, total: 0, workTypes: {} }
+                  }
+                  overallAdvisors[advisor].ros += data.ros
+                  overallAdvisors[advisor].labour += data.labour
+                  overallAdvisors[advisor].parts += data.parts
+                  overallAdvisors[advisor].total += data.total
+                  
+                  // Merge work types
+                  Object.entries(data.workTypes).forEach(([wt, count]) => {
+                    if (!overallAdvisors[advisor].workTypes[wt]) {
+                      overallAdvisors[advisor].workTypes[wt] = 0
+                    }
+                    overallAdvisors[advisor].workTypes[wt] += count
+                  })
+                })
+              })
+              
+              return { [rfAllDates[0] + ' to ' + rfAllDates[rfAllDates.length - 1]]: overallAdvisors }
+            } else {
+              // Show specific date
+              return { [selectedDate]: rfDateGroups[selectedDate] || {} }
+            }
+          }
+          
+          const rfDisplayData = getRfDisplayData()
+          const rfDisplayDate = Object.keys(rfDisplayData)[0]
+          const rfAdvisors = rfDisplayData[rfDisplayDate] || {}
+          
+          // Calculate totals
+          const rfTotalROs = Object.values(rfAdvisors).reduce((sum, adv) => sum + adv.ros, 0)
+          const rfTotalLabour = Object.values(rfAdvisors).reduce((sum, adv) => sum + adv.labour, 0)
+          const rfTotalParts = Object.values(rfAdvisors).reduce((sum, adv) => sum + adv.parts, 0)
+          const rfTotalAmount = rfTotalLabour + rfTotalParts
+          
+          return (
+            <Card className="border-2 border-green-200 bg-gradient-to-br from-white to-green-50/30 shadow-lg">
+              <CardHeader>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-lg bg-green-100 p-2">
+                        <Wrench className="h-5 w-5 text-green-600" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-xl">RF Mechanical Performance</CardTitle>
+                        <CardDescription>RF Mechanical work type performance by advisor</CardDescription>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Date Selector with Overall Toggle */}
+                  <div className="flex items-center gap-3">
+                    <Calendar className="h-5 w-5 text-gray-600" />
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className={`w-full max-w-md h-11 border-2 bg-white transition-colors justify-start text-left font-normal ${
+                            showOverall 
+                              ? 'border-gray-300 opacity-50 cursor-not-allowed' 
+                              : 'border-green-300 hover:border-green-400'
+                          }`}
+                          disabled={showOverall}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {selectedDate === "latest" ? "Latest Date" : selectedDate}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <div className="p-3">
+                          <div className="text-sm font-medium text-gray-900 mb-3">📅 Available Dates</div>
+                          <div className="grid gap-1 max-h-60 overflow-y-auto">
+                            <Button
+                              variant={selectedDate === "latest" ? "default" : "ghost"}
+                              className="justify-start h-8 px-2 text-sm"
+                              onClick={() => setSelectedDate("latest")}
+                            >
+                              <div className="flex items-center justify-between w-full">
+                                <span>📍 Latest Date</span>
+                                <Badge variant="secondary" className="ml-2 text-xs">
+                                  Auto
+                                </Badge>
+                              </div>
+                            </Button>
+                            {rfAllDates.map(date => {
+                              const advisorCount = Object.keys(rfDateGroups[date] || {}).length
+                              const isSelected = selectedDate === date
+                              return (
+                                <Button
+                                  key={date}
+                                  variant={isSelected ? "default" : "ghost"}
+                                  className="justify-start h-8 px-2 text-sm"
+                                  onClick={() => setSelectedDate(date)}
+                                >
+                                  <div className="flex items-center justify-between w-full">
+                                    <span className="font-medium">📅 {date}</span>
+                                    <Badge variant="outline" className="ml-2 text-xs">
+                                      {advisorCount} advisors
+                                    </Badge>
+                                  </div>
+                                </Button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                    
+                    {/* Overall Toggle Button */}
+                    <Button
+                      onClick={() => setShowOverall(!showOverall)}
+                      className={`h-11 px-6 font-semibold transition-all ${
+                        showOverall
+                          ? 'bg-purple-600 hover:bg-purple-700 text-white shadow-lg'
+                          : 'bg-white hover:bg-gray-50 text-gray-700 border-2 border-gray-300'
+                      }`}
+                    >
+                      <BarChart3 className="h-4 w-4 mr-2" />
+                      Overall {showOverall ? 'ON' : 'OFF'}
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              
+              <CardContent>
+                <div className="border-2 border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm">
+                  {/* Table Header */}
+                  <div className="bg-gradient-to-r from-green-600 to-green-700 px-4 py-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-bold text-white">
+                        {showOverall ? "Overall RF Mechanical Performance" : `RF Mechanical - ${rfDisplayDate}`}
+                      </h3>
+                      <div className="flex items-center gap-4 text-white text-sm">
+                        <div className="text-center">
+                          <p className="text-xs opacity-90">Advisors</p>
+                          <p className="text-lg font-bold">{Object.keys(rfAdvisors).length}</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-xs opacity-90">Avg/RO</p>
+                          <p className="text-lg font-bold">₹{rfTotalROs > 0 ? (rfTotalAmount / rfTotalROs).toFixed(0) : 0}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Advisors Table */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="bg-gray-50 border-b-2 border-gray-200">
+                          <th className="text-left py-3 px-4 font-semibold text-gray-700 text-sm">Service Advisor</th>
+                          <th className="text-center py-3 px-4 font-semibold text-gray-700 text-sm">ROs</th>
+                          <th className="text-right py-3 px-4 font-semibold text-emerald-700 text-sm">Labour Amt</th>
+                          <th className="text-right py-3 px-4 font-semibold text-blue-700 text-sm">Parts Amt</th>
+                          <th className="text-right py-3 px-4 font-semibold text-purple-700 text-sm">Total</th>
+                          <th className="text-right py-3 px-4 font-semibold text-orange-700 text-sm">Avg Labour/RO</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(rfAdvisors)
+                          .sort((a, b) => b[1].total - a[1].total)
+                          .map(([advisor, data]) => (
+                          <tr key={advisor} className="border-b border-gray-100 hover:bg-green-50 transition-colors">
+                            <td className="py-3 px-4">
+                              <div className="flex items-center gap-2">
+                                <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                                <span className="font-medium text-gray-900">{advisor}</span>
+                              </div>
+                            </td>
+                            <td 
+                              className="py-3 px-4 text-center relative"
+                              onMouseEnter={() => setHoveredAdvisor(advisor)}
+                              onMouseLeave={() => setHoveredAdvisor(null)}
+                            >
+                              <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-green-100 text-green-700 font-bold text-sm cursor-help">
+                                {data.ros}
+                              </span>
+                              {hoveredAdvisor === advisor && Object.keys(data.workTypes).length > 0 && (
+                                <div className="absolute z-50 left-1/2 transform -translate-x-1/2 top-full mt-2 bg-white border-2 border-green-300 rounded-lg shadow-2xl p-4 min-w-[250px]">
+                                  <div className="font-bold text-gray-800 mb-3 text-sm border-b pb-2">RF Mechanical Work Types</div>
+                                  <div className="space-y-2">
+                                    {Object.entries(data.workTypes)
+                                      .sort((a, b) => b[1] - a[1])
+                                      .map(([workType, count]) => (
+                                        <div key={workType} className="flex items-center justify-between text-xs">
+                                          <span className="font-medium text-gray-700">{workType}</span>
+                                          <span className="bg-green-100 text-green-800 px-2 py-1 rounded font-bold">{count}</span>
+                                        </div>
+                                      ))}
+                                  </div>
+                                  <div className="mt-3 pt-2 border-t border-gray-200 flex items-center justify-between text-xs font-bold">
+                                    <span className="text-gray-800">Total ROs</span>
+                                    <span className="bg-green-600 text-white px-2 py-1 rounded">{data.ros}</span>
+                                  </div>
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 text-right font-semibold text-emerald-600">
+                              ₹{data.labour.toLocaleString()}
+                            </td>
+                            <td className="py-3 px-4 text-right font-semibold text-blue-600">
+                              ₹{data.parts.toLocaleString()}
+                            </td>
+                            <td className="py-3 px-4 text-right font-bold text-purple-700">
+                              ₹{data.total.toLocaleString()}
+                            </td>
+                            <td className="py-3 px-4 text-right font-semibold text-orange-600">
+                              ₹{(data.labour / data.ros).toFixed(0)}
+                            </td>
+                          </tr>
+                        ))}
+                        {/* Total Row */}
+                        <tr className="bg-gradient-to-r from-gray-100 to-gray-50 border-t-2 border-gray-300 font-bold">
+                          <td className="py-3 px-4 text-gray-900">Total</td>
+                          <td className="py-3 px-4 text-center">
+                            <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-green-600 text-white font-bold text-sm">
+                              {rfTotalROs}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-right text-emerald-700">₹{rfTotalLabour.toLocaleString()}</td>
+                          <td className="py-3 px-4 text-right text-blue-700">₹{rfTotalParts.toLocaleString()}</td>
+                          <td className="py-3 px-4 text-right text-purple-800">₹{rfTotalAmount.toLocaleString()}</td>
+                          <td className="py-3 px-4 text-right text-orange-700">₹{rfTotalROs > 0 ? (rfTotalLabour / rfTotalROs).toFixed(0) : 0}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )
+        })()}
+
+        {/* Bodyshop - Accidental Repair & Running Repair BodyCare Analysis */}
+        {selectedDataType === "ro_billing" && (() => {
+          // Filter for Accidental Repair and Running Repair BodyCare work types
+          const bodyshopData = dashboardData.data.filter((record: any) => 
+            record.workType?.toLowerCase().includes('accidental repair') ||
+            record.workType?.toLowerCase().includes('running repair bodycare')
+          )
+
+          if (bodyshopData.length === 0) {
+            return null // Don't show if no bodyshop data
+          }
+
+          // Group by advisor with work type breakdown
+          const advisorStats: Record<string, { labour: number; parts: number; ros: number; workTypes: Record<string, { count: number; labour: number; parts: number }> }> = {}
+          
+          bodyshopData.forEach((record: any) => {
             const advisor = record.serviceAdvisor || 'Unknown'
             const labourAmt = record.labourAmt || 0
             const partAmt = record.partAmt || 0
@@ -1449,13 +1895,22 @@ export default function SMDashboard() {
             const labour = showWithTax ? labourAmt + labourTax : labourAmt
             const parts = showWithTax ? partAmt + partTax : partAmt
             
+            const workType = record.workType || 'Unknown'
+            
             if (!advisorStats[advisor]) {
-              advisorStats[advisor] = { labour: 0, parts: 0, ros: 0 }
+              advisorStats[advisor] = { labour: 0, parts: 0, ros: 0, workTypes: {} }
+            }
+            
+            if (!advisorStats[advisor].workTypes[workType]) {
+              advisorStats[advisor].workTypes[workType] = { count: 0, labour: 0, parts: 0 }
             }
             
             advisorStats[advisor].labour += labour
             advisorStats[advisor].parts += parts
             advisorStats[advisor].ros += 1
+            advisorStats[advisor].workTypes[workType].count += 1
+            advisorStats[advisor].workTypes[workType].labour += labour
+            advisorStats[advisor].workTypes[workType].parts += parts
           })
 
           // Calculate totals
@@ -1478,8 +1933,8 @@ export default function SMDashboard() {
                       <Car className="h-5 w-5 text-red-600" />
                     </div>
                     <div>
-                      <CardTitle className="text-xl">Bodyshop - Accidental Repair</CardTitle>
-                      <CardDescription>Advisor-wise performance for accidental repairs</CardDescription>
+                      <CardTitle className="text-xl">Bodyshop - Accidental Repair & Running Repair BodyCare</CardTitle>
+                      <CardDescription>Advisor-wise performance for bodyshop work types</CardDescription>
                     </div>
                   </div>
                 </div>
@@ -1507,11 +1962,30 @@ export default function SMDashboard() {
                           return (
                             <tr key={idx} className="border-b border-gray-200 hover:bg-red-50 transition-colors">
                               <td className="py-3 px-4 font-semibold text-gray-900">{advisor}</td>
-                              <td className="py-3 px-4 text-center">
-                                <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-600 text-white font-bold text-sm">
-                                  {stats.ros}
-                                </span>
-                              </td>
+                              <td 
+                              className="py-3 px-4 text-center relative"
+                              onMouseEnter={() => setHoveredAdvisor(advisor)}
+                              onMouseLeave={() => setHoveredAdvisor(null)}
+                            >
+                              <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-600 text-white font-bold text-sm cursor-help">
+                                {stats.ros}
+                              </span>
+                              {hoveredAdvisor === advisor && Object.keys(stats.workTypes).length > 0 && (
+                                <div className="absolute z-50 left-1/2 transform -translate-x-1/2 top-full mt-2 bg-white border-2 border-red-300 rounded-lg shadow-2xl p-3 min-w-[200px]">
+                                  <div className="font-bold text-gray-800 mb-2 text-sm border-b pb-2">Bodyshop Work Types</div>
+                                  <div className="space-y-1">
+                                    {Object.entries(stats.workTypes)
+                                      .sort((a, b) => b[1].count - a[1].count)
+                                      .map(([workType, wtStats]) => (
+                                        <div key={workType} className="flex items-center justify-between text-sm">
+                                          <span className="font-medium text-gray-700">{workType}</span>
+                                          <span className="bg-red-100 text-red-800 px-2 py-1 rounded font-bold">{wtStats.count}</span>
+                                        </div>
+                                      ))}
+                                  </div>
+                                </div>
+                              )}
+                            </td>
                               <td className="py-3 px-4 text-right font-semibold text-emerald-600">
                                 ₹{stats.labour.toLocaleString()}
                               </td>
@@ -1557,8 +2031,13 @@ export default function SMDashboard() {
         
         {/* Warranty Claims Analysis */}
         {selectedDataType === "warranty" && (() => {
+          // Use API summary data for warranty breakdowns
+          const claimTypeData = dashboardData.summary?.claimTypeBreakdown || []
+          const claimStatusData = dashboardData.summary?.claimStatusBreakdown || []
+          const claimTypeStatusData = dashboardData.summary?.claimTypeStatusBreakdown || []
+          
           // Safety check for data
-          if (!dashboardData?.data || !Array.isArray(dashboardData.data) || dashboardData.data.length === 0) {
+          if (claimTypeData.length === 0 && claimStatusData.length === 0) {
             return (
               <Card className="border-2 border-orange-200 bg-gradient-to-br from-white to-orange-50/30 shadow-lg">
                 <CardContent className="p-12 text-center">
@@ -1569,35 +2048,11 @@ export default function SMDashboard() {
             )
           }
 
-          // Group by claim type with labour and part amounts
-          const claimTypeStats: Record<string, { count: number; labour: number; part: number; total: number }> = {}
-          let overallLabour = 0
-          let overallPart = 0
-          let overallTotal = 0
-          let totalClaims = 0
-          
-          console.log('Warranty Data Sample:', dashboardData.data[0]) // Debug log
-          
-          dashboardData.data.forEach((r: any) => {
-            const type = r.claimType || 'Unknown'
-            const labour = parseFloat(r.labour || 0)
-            const part = parseFloat(r.part || 0)
-            const total = labour + part
-            
-            if (!claimTypeStats[type]) {
-              claimTypeStats[type] = { count: 0, labour: 0, part: 0, total: 0 }
-            }
-            
-            claimTypeStats[type].count += 1
-            claimTypeStats[type].labour += labour
-            claimTypeStats[type].part += part
-            claimTypeStats[type].total += total
-            
-            overallLabour += labour
-            overallPart += part
-            overallTotal += total
-            totalClaims += 1
-          })
+          // Get totals from API summary
+          const overallLabour = dashboardData.summary?.totalLabourAmount || 0
+          const overallPart = dashboardData.summary?.totalPartAmount || 0
+          const overallTotal = dashboardData.summary?.totalClaimAmount || 0
+          const totalClaims = dashboardData.summary?.totalClaims || 0
           
           return (
             <Card className="border-2 border-orange-200 bg-gradient-to-br from-white to-orange-50/30 shadow-lg">
@@ -1623,44 +2078,92 @@ export default function SMDashboard() {
                 </div>
               </CardHeader>
               <CardContent>
-                {/* Claim Type Breakdown */}
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3">Claim Type Breakdown</h3>
-                  <div className="space-y-3">
-                    {Object.entries(claimTypeStats)
-                      .sort((a, b) => b[1].total - a[1].total)
-                      .map(([type, stats], idx) => (
-                      <div key={idx} className="p-4 rounded-lg bg-white border-2 border-gray-200 hover:border-orange-300 hover:shadow-lg transition-all">
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-3">
-                            <div className="flex items-center justify-center w-8 h-8 rounded-full bg-gradient-to-br from-orange-500 to-orange-600 text-white font-bold text-sm shadow-lg">
-                              {idx + 1}
+                  <div className="space-y-6">
+                    {/* Claim Types with Status Breakdown */}
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Claim Types & Status</h3>
+                      <div className="space-y-4">
+                        {claimTypeData.map((claimType: any, idx: number) => {
+                          // Get status breakdown specific to this claim type
+                          const typeSpecificStatus = claimTypeStatusData.filter(
+                            (item: any) => item.claimType === claimType.type
+                          )
+                          
+                          // Calculate total as labour + part
+                          const totalAmount = (claimType.labourAmount || 0) + (claimType.partAmount || 0)
+                          
+                          return (
+                            <div key={idx} className="p-4 rounded-lg bg-white border-2 border-gray-200 hover:border-orange-300 hover:shadow-lg transition-all">
+                              <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center gap-3">
+                                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-gradient-to-br from-orange-500 to-orange-600 text-white font-bold text-sm shadow-lg">
+                                    {idx + 1}
+                                  </div>
+                                  <div>
+                                    <span className="text-base font-bold text-gray-900">{claimType.type}</span>
+                                    <p className="text-xs text-gray-500">{claimType.count} claims</p>
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-lg font-bold text-orange-600">₹{(totalAmount / 100000).toFixed(2)}L</p>
+                                  <p className="text-xs text-gray-500">Total</p>
+                                </div>
+                              </div>
+                              
+                              <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-gray-200">
+                                <div className="text-center p-3 rounded bg-blue-50">
+                                  <p className="text-xs text-gray-600 mb-1">Labour</p>
+                                  <p className="text-sm font-bold text-blue-600">₹{((claimType.labourAmount || 0) / 100000).toFixed(2)}L</p>
+                                </div>
+                                <div className="text-center p-3 rounded bg-green-50">
+                                  <p className="text-xs text-gray-600 mb-1">Part</p>
+                                  <p className="text-sm font-bold text-green-600">₹{((claimType.partAmount || 0) / 100000).toFixed(2)}L</p>
+                                </div>
+                              </div>
+
+                              {/* Status breakdown specific to this claim type */}
+                              <div className="mt-4 pt-3 border-t border-gray-100">
+                                <p className="text-sm font-medium text-gray-700 mb-2">Status Distribution:</p>
+                                <div className="flex flex-wrap gap-2">
+                                  {typeSpecificStatus.length > 0 ? (
+                                    typeSpecificStatus.map((status: any, statusIdx: number) => (
+                                      <div key={statusIdx} className="flex items-center gap-2 px-3 py-1 rounded-full bg-purple-100 border border-purple-200">
+                                        <span className="text-xs font-medium text-purple-700">{status.claimStatus}</span>
+                                        <span className="text-xs text-purple-600">({status.count})</span>
+                                      </div>
+                                    ))
+                                  ) : (
+                                    <span className="text-xs text-gray-500">No status data available</span>
+                                  )}
+                                </div>
+                              </div>
                             </div>
-                            <div>
-                              <span className="text-base font-bold text-gray-900">{type}</span>
-                              <p className="text-xs text-gray-500">{stats.count} claims</p>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-lg font-bold text-orange-600">₹{(stats.total / 100000).toFixed(2)}L</p>
-                            <p className="text-xs text-gray-500">Total</p>
-                          </div>
-                        </div>
-                        
-                        <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-gray-200">
-                          <div className="text-center p-3 rounded bg-blue-50">
-                            <p className="text-xs text-gray-600 mb-1">Labour Amount</p>
-                            <p className="text-lg font-bold text-blue-600">₹{(stats.labour / 100000).toFixed(2)}L</p>
-                          </div>
-                          <div className="text-center p-3 rounded bg-green-50">
-                            <p className="text-xs text-gray-600 mb-1">Part Amount</p>
-                            <p className="text-lg font-bold text-green-600">₹{(stats.part / 100000).toFixed(2)}L</p>
-                          </div>
-                        </div>
+                          )
+                        })}
                       </div>
-                    ))}
+                    </div>
+
+                    {/* Overall Status Summary */}
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Overall Status Summary</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {claimStatusData.map((status: any, idx: number) => (
+                          <div key={idx} className="p-3 rounded-lg bg-gradient-to-r from-purple-50 to-white border border-purple-200">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="text-sm font-bold text-gray-900">{status.status}</p>
+                                <p className="text-xs text-gray-600">{status.count} claims</p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-sm font-bold text-purple-600">₹{((status.totalAmount || 0) / 100000).toFixed(2)}L</p>
+                                <p className="text-xs text-gray-500">L: ₹{((status.labourAmount || 0) / 100000).toFixed(2)}L | P: ₹{((status.partAmount || 0) / 100000).toFixed(2)}L</p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
-                </div>
               </CardContent>
             </Card>
           )
@@ -1668,24 +2171,12 @@ export default function SMDashboard() {
         
         {/* Service Booking Analysis */}
         {selectedDataType === "service_booking" && (() => {
-          // Group by service advisor
-          const advisorStats: Record<string, { bookings: number; completed: number; pending: number }> = {}
-          dashboardData.data.forEach((r: any) => {
-            const advisor = r.serviceAdvisor || 'Unknown'
-            if (!advisorStats[advisor]) {
-              advisorStats[advisor] = { bookings: 0, completed: 0, pending: 0 }
-            }
-            advisorStats[advisor].bookings += 1
-            if (r.status?.toLowerCase() === "completed" || r.status?.toLowerCase() === "close") {
-              advisorStats[advisor].completed += 1
-            } else if (r.status?.toLowerCase() === "pending" || r.status?.toLowerCase() === "in progress") {
-              advisorStats[advisor].pending += 1
-            }
-          })
+          // Use the enhanced API data structure
+          const serviceAdvisorData = dashboardData.summary?.serviceAdvisorBreakdown || []
+          const workTypeData = dashboardData.summary?.workTypeBreakdown || []
+          const statusData = dashboardData.summary?.statusBreakdown || []
           
-          const topAdvisors = Object.entries(advisorStats)
-            .sort((a, b) => b[1].bookings - a[1].bookings)
-            .slice(0, 8)
+          const topAdvisors = serviceAdvisorData.slice(0, 8)
           
           return (
             <Card className="border-2 border-emerald-200 bg-gradient-to-br from-white to-emerald-50/30 shadow-lg">
@@ -1711,39 +2202,64 @@ export default function SMDashboard() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  {topAdvisors.map(([advisor, stats], idx) => {
-                    const completionRate = stats.bookings > 0 ? ((stats.completed / stats.bookings) * 100).toFixed(0) : 0
-                    return (
-                      <div key={idx} className="p-4 rounded-lg bg-white border-2 border-gray-200 hover:border-emerald-300 hover:shadow-md transition-all">
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center text-white font-bold shadow-lg">
-                              {advisor.charAt(0)}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Service Advisor Breakdown */}
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Service Advisors</h3>
+                    <div className="space-y-3">
+                      {topAdvisors.map((advisor, idx) => (
+                        <div key={idx} className="p-3 rounded-lg bg-white border border-gray-200 hover:border-emerald-300 transition-all">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center">
+                                <span className="text-sm font-bold text-emerald-700">{advisor.advisor.charAt(0)}</span>
+                              </div>
+                              <div>
+                                <p className="font-medium text-gray-900">{advisor.advisor}</p>
+                                <p className="text-xs text-gray-500">Service Advisor</p>
+                              </div>
                             </div>
-                            <div>
-                              <p className="font-semibold text-gray-900">{advisor}</p>
-                              <p className="text-xs text-gray-500">{stats.bookings} total bookings</p>
+                            <div className="text-right">
+                              <p className="text-xl font-bold text-emerald-700">{advisor.count}</p>
+                              <p className="text-xs text-gray-500">Bookings</p>
                             </div>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-2xl font-bold text-emerald-700">{completionRate}%</p>
-                            <p className="text-xs text-gray-500">Completion</p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-4 text-sm">
-                          <div className="flex items-center gap-1">
-                            <CheckCircle className="h-4 w-4 text-green-600" />
-                            <span className="text-gray-600">{stats.completed} Completed</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Clock className="h-4 w-4 text-orange-600" />
-                            <span className="text-gray-600">{stats.pending} Pending</span>
-                          </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Work Type & Status Breakdown */}
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Work Types & Status</h3>
+                    <div className="space-y-4">
+                      {/* Work Type */}
+                      <div className="p-3 rounded-lg bg-blue-50 border border-blue-200">
+                        <h4 className="font-medium text-blue-900 mb-2">Work Types</h4>
+                        <div className="space-y-2">
+                          {workTypeData.map((type, idx) => (
+                            <div key={idx} className="flex justify-between items-center">
+                              <span className="text-sm text-blue-800">{type.type}</span>
+                              <span className="font-semibold text-blue-900">{type.count}</span>
+                            </div>
+                          ))}
                         </div>
                       </div>
-                    )
-                  })}
+
+                      {/* Status */}
+                      <div className="p-3 rounded-lg bg-orange-50 border border-orange-200">
+                        <h4 className="font-medium text-orange-900 mb-2">Status</h4>
+                        <div className="space-y-2">
+                          {statusData.map((status, idx) => (
+                            <div key={idx} className="flex justify-between items-center">
+                              <span className="text-sm text-orange-800">{status.status}</span>
+                              <span className="font-semibold text-orange-900">{status.count}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>

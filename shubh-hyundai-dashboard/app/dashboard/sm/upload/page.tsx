@@ -21,25 +21,25 @@ const uploadSections: UploadSection[] = [
   {
     type: "ro_billing",
     title: "RO Billing",
-    description: "Upload Repair Order billing details with labour and parts cost",
+    description: "Upload Repair Order billing details with labour and parts cost. Required: R/O No or RO_No",
     color: "blue",
   },
   {
     type: "operations",
-    title: "Operations",
-    description: "Upload service operations and technician time tracking data",
+    title: "Operations/Part",
+    description: "Upload operations data with car model counts. Required: OP/Part Code column",
     color: "green",
   },
   {
     type: "warranty",
     title: "Warranty",
-    description: "Upload warranty claims and approval records",
+    description: "Upload warranty claims and approval records. Required: R/O No or RO_No",
     color: "purple",
   },
   {
     type: "service_booking",
-    title: "Service Booking List",
-    description: "Upload service bookings and scheduling information",
+    title: "Booking List",
+    description: "Upload service bookings and scheduling information. Required: Reg. No or Reg_No",
     color: "orange",
   },
 ]
@@ -89,22 +89,32 @@ export default function ServiceManagerUploadPage() {
 
     try {
       const formData = new FormData()
-      formData.append("file", file)
-      formData.append("uploadedBy", user.email)
-      formData.append("city", user.city)
-      formData.append("uploadType", type)
+      formData.append("excelFile", file) // Changed from "file" to "excelFile"
+      formData.append("uploaded_by", user.email) // Changed from "uploadedBy"
+      formData.append("org_id", "64f8a1b2c3d4e5f6a7b8c9d0") // Demo org ID
+      formData.append("showroom_id", "64f8a1b2c3d4e5f6a7b8c9d1") // Demo showroom ID
+      
+      // Map upload types to backend file types
+      const fileTypeMapping: Record<UploadType, string> = {
+        ro_billing: "ro_billing",
+        operations: "operations_part",
+        warranty: "warranty", 
+        service_booking: "booking_list"
+      }
+      formData.append("file_type", fileTypeMapping[type])
 
-      const response = await fetch(getApiUrl("/api/service-manager/upload"), {
+      const response = await fetch("http://localhost:5000/api/excel/upload", {
         method: "POST",
         body: formData,
       })
 
       const data = await response.json()
 
-      if (response.ok) {
+      if (data.success) {
+        const uploadInfo = data.data ? ` (${data.data.totalProcessed} rows processed using ${data.data.uploadCase})` : ''
         setMessages((prev) => ({
           ...prev,
-          [type]: { type: "success", text: `✅ ${data.message} (${data.totalRows} rows uploaded)` },
+          [type]: { type: "success", text: `✅ ${data.message}${uploadInfo}` },
         }))
         setFiles((prev) => ({ ...prev, [type]: null }))
         // Reset file input
@@ -113,10 +123,11 @@ export default function ServiceManagerUploadPage() {
       } else {
         setMessages((prev) => ({
           ...prev,
-          [type]: { type: "error", text: data.message || "Upload failed" },
+          [type]: { type: "error", text: data.error || "Upload failed" },
         }))
       }
     } catch (error) {
+      console.error('Upload error:', error)
       setMessages((prev) => ({
         ...prev,
         [type]: { type: "error", text: "Network error. Please check if the server is running." },
@@ -280,11 +291,27 @@ export default function ServiceManagerUploadPage() {
         </CardHeader>
         <CardContent className="space-y-3 text-sm text-gray-600">
           <ul className="list-disc list-inside space-y-2">
-            <li>Only Excel files (.xlsx or .xls) are accepted</li>
-            <li>Your uploaded data is private and only visible to you</li>
-            <li>Each file type has specific column requirements - ensure your Excel matches the format</li>
-            <li>After uploading, view your data on the dashboard by selecting the data type</li>
-            <li>You can upload multiple files of the same type - all data will be aggregated</li>
+            <li><strong>File Format:</strong> Only Excel files (.xlsx or .xls) are accepted, maximum 50MB</li>
+            <li><strong>Smart Column Mapping:</strong> System automatically maps common column variations (R/O No → RO_No, Reg. No → Reg_No, etc.)</li>
+            <li><strong>Supported Formats:</strong> Works with standard Hyundai service center Excel exports</li>
+            <li><strong>Required Columns:</strong> 
+              <ul className="ml-4 mt-1">
+                <li>• RO Billing: "R/O No" or "RO_No"</li>
+                <li>• Warranty: "R/O No" or "RO_No"</li>
+                <li>• Booking List: "Reg. No" or "Reg_No"</li>
+                <li>• Operations: "OP/Part Code" or "OP_Part_Code"</li>
+              </ul>
+            </li>
+            <li><strong>Smart Processing:</strong> Automatically detects new, updated, or mixed data uploads</li>
+            <li><strong>Strict Validation:</strong> 
+              <ul className="ml-4 mt-1">
+                <li>• <strong>No Duplicates Allowed:</strong> Files with duplicate unique keys will be rejected</li>
+                <li>• <strong>No Empty Fields:</strong> All required fields must have valid values</li>
+                <li>• <strong>No Invalid Codes:</strong> Codes like "0" or empty values are not allowed</li>
+                <li>• <strong>Clean Your Data:</strong> Fix all issues in Excel before uploading</li>
+              </ul>
+            </li>
+            <li><strong>Database Handling:</strong> Updates existing records or inserts new ones based on unique keys</li>
           </ul>
         </CardContent>
       </Card>

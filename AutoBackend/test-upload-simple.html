@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Excel Upload</title>
+</head>
+<body>
+    <h1>Test Excel Upload</h1>
+    
+    <form id="uploadForm" enctype="multipart/form-data">
+        <div>
+            <label for="excelFile">Excel File:</label>
+            <input type="file" id="excelFile" name="excelFile" accept=".xlsx,.xls" required>
+        </div>
+        
+        <div>
+            <label for="file_type">File Type:</label>
+            <select id="file_type" name="file_type" required>
+                <option value="ro_billing">RO Billing</option>
+                <option value="warranty">Warranty</option>
+                <option value="booking_list">Booking List</option>
+                <option value="operations_part">Operations Part</option>
+            </select>
+        </div>
+        
+        <div>
+            <label for="uploaded_by">Uploaded By:</label>
+            <input type="email" id="uploaded_by" name="uploaded_by" value="test@example.com" required>
+        </div>
+        
+        <input type="hidden" name="org_id" value="64f8a1b2c3d4e5f6a7b8c9d0">
+        <input type="hidden" name="showroom_id" value="64f8a1b2c3d4e5f6a7b8c9d1">
+        
+        <button type="submit">Upload</button>
+    </form>
+    
+    <div id="result"></div>
+    
+    <script>
+        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const resultDiv = document.getElementById('result');
+            
+            try {
+                resultDiv.innerHTML = 'Uploading...';
+                
+                const response = await fetch('http://localhost:5000/api/excel/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                resultDiv.innerHTML = `
+                    <h3>Response:</h3>
+                    <p>Status: ${response.status}</p>
+                    <pre>${JSON.stringify(result, null, 2)}</pre>
+                `;
+                
+            } catch (error) {
+                resultDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            }
+        });
+    </script>
+</body>
+</html>
