@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react"
 import { useAuth } from "@/lib/auth-context"
 import { usePermissions } from "@/hooks/usePermissions"
+import { useDashboard } from "@/contexts/DashboardContext"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Upload, AlertCircle, FileText, DollarSign, CheckCircle, Trash2, Eye, Search, Calendar } from "lucide-react"
@@ -25,6 +26,7 @@ interface AdvisorOperation {
 export default function OperationsPage() {
   const { user } = useAuth()
   const { hasPermission } = usePermissions()
+  const { markForRefresh } = useDashboard()
   const [advisors, setAdvisors] = useState<string[]>([])
   const [operationsData, setOperationsData] = useState<AdvisorOperation[]>([])
   const [roData, setRoData] = useState<any[]>([])
@@ -143,6 +145,13 @@ export default function OperationsPage() {
       if (refreshResponse.ok) {
         const refreshResult = await refreshResponse.json()
         setOperationsData(refreshResult.data || [])
+      }
+      
+      // ✅ Invalidate dashboard cache for operations so main dashboard shows new data instantly
+      if (user?.email) {
+        markForRefresh(user.email, 'operations', user.city || 'default')
+        markForRefresh(user.email, 'average', user.city || 'default')
+        console.log('🔄 Operations cache invalidated - main dashboard will show new data instantly')
       }
     } catch (err: any) {
       console.error("Upload error:", err)
@@ -323,16 +332,7 @@ export default function OperationsPage() {
           </CardHeader>
 
           <CardContent className="p-6">
-            {isLoading ? (
-              <div className="text-center py-12">
-                <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-100 mb-4">
-                  <div className="animate-spin">
-                    <FileText className="h-6 w-6 text-green-600" />
-                  </div>
-                </div>
-                <p className="text-gray-600">Loading advisors...</p>
-              </div>
-            ) : error ? (
+            {error ? (
               <div className="bg-red-50 border border-red-300 rounded-lg p-6 text-center">
                 <AlertCircle className="h-10 w-10 text-red-600 mx-auto mb-3" />
                 <p className="text-red-800 font-semibold">{error}</p>

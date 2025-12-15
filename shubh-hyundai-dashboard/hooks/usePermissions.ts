@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { useAuth } from "@/lib/auth-context"
 import { getApiUrl } from "@/lib/config"
+import { useUserApiData } from "@/hooks/useGlobalApiData"
 
 interface Permission {
   id: string
@@ -24,6 +25,16 @@ export function usePermissions() {
         setIsLoading(false)
         return
       }
+      
+      // ✅ IMMEDIATE ACCESS: Set role-based permissions synchronously first
+      const rolePermissions = getWorkingRoleBasedPermissions(user.role)
+      if (rolePermissions.length > 0) {
+        setPermissions(rolePermissions)
+        setIsLoading(false) // ✅ Set loading to false immediately for role-based access
+        setLastFetchedEmail(user.email)
+      }
+      
+      // Then enhance with database permissions asynchronously
       fetchUserPermissions()
     } else {
       setPermissions([])
@@ -36,7 +47,11 @@ export function usePermissions() {
     if (!user) return
 
     try {
-      setIsLoading(true)
+      // ✅ Don't set loading to true if we already have role-based permissions
+      const hasRolePermissions = permissions.length > 0
+      if (!hasRolePermissions) {
+        setIsLoading(true)
+      }
       setError(null)
 
       // Check for valid cache
@@ -54,14 +69,8 @@ export function usePermissions() {
         }
       }
 
-      // Set role permissions for recognized roles
-      const rolePermissions = getWorkingRoleBasedPermissions(user.role)
-      
-      if (rolePermissions.length > 0) {
-        setPermissions(rolePermissions)
-        setLastFetchedEmail(user.email)
-      }
-      // For custom roles, don't set empty permissions yet - wait for database API
+      // Role permissions are already set in useEffect for immediate access
+      // This function now only enhances with database permissions
 
       // Try to enhance with database permissions (optional)
       try {
@@ -113,8 +122,9 @@ export function usePermissions() {
             }
           } else {
             console.log("⚠️ Database returned 0 permissions for user:", user.email)
-            // Database returned no permissions - only set empty if role is also unrecognized
-            if (rolePermissions.length === 0) {
+            // Database returned no permissions - get current role permissions
+            const currentRolePermissions = getWorkingRoleBasedPermissions(user.role)
+            if (currentRolePermissions.length === 0) {
               console.log("🚫 Setting empty permissions - custom role with no database permissions")
               setPermissions([])
               localStorage.setItem(`permissions_${user.email}`, JSON.stringify({
@@ -122,7 +132,7 @@ export function usePermissions() {
                 timestamp: Date.now()
               }))
             } else {
-              console.log("✅ Keeping role-based permissions:", rolePermissions)
+              console.log("✅ Keeping role-based permissions:", currentRolePermissions)
             }
             return
           }
@@ -195,11 +205,12 @@ export function usePermissions() {
             
             if (allPermissions.length > 0) {
               // Only update if database permissions are different/better
+              const currentRolePermissions = getWorkingRoleBasedPermissions(user.role)
               console.log("📊 Comparing permissions:")
-              console.log("   Role-based:", rolePermissions)
+              console.log("   Role-based:", currentRolePermissions)
               console.log("   Database:", allPermissions)
               
-              if (allPermissions.length >= rolePermissions.length) {
+              if (allPermissions.length >= currentRolePermissions.length) {
                 console.log("✅ Using enhanced database permissions")
                 setPermissions(allPermissions)
                 
@@ -212,15 +223,16 @@ export function usePermissions() {
                 console.log("📊 Role-based permissions are better, keeping them")
                 // Cache the role-based result
                 localStorage.setItem(`permissions_${user.email}`, JSON.stringify({
-                  permissions: rolePermissions,
+                  permissions: currentRolePermissions,
                   timestamp: Date.now()
                 }))
               }
             } else {
               console.log("⚠️ No permissions found in database roles")
               // Cache the role-based result
+              const currentRolePermissions = getWorkingRoleBasedPermissions(user.role)
               localStorage.setItem(`permissions_${user.email}`, JSON.stringify({
-                permissions: rolePermissions,
+                permissions: currentRolePermissions,
                 timestamp: Date.now()
               }))
             }
@@ -242,8 +254,9 @@ export function usePermissions() {
           if (user.role === "general_manager") {
             console.log("✅ User is GM but not in database, giving role-based permissions")
             // Cache the role-based result
+            const currentRolePermissions = getWorkingRoleBasedPermissions(user.role)
             localStorage.setItem(`permissions_${user.email}`, JSON.stringify({
-              permissions: rolePermissions,
+              permissions: currentRolePermissions,
               timestamp: Date.now()
             }))
           } else {
@@ -258,16 +271,18 @@ export function usePermissions() {
         } else {
           console.log("⚠️ Summary API failed, keeping role-based permissions")
           // Cache the role-based result
+          const currentRolePermissions = getWorkingRoleBasedPermissions(user.role)
           localStorage.setItem(`permissions_${user.email}`, JSON.stringify({
-            permissions: rolePermissions,
+            permissions: currentRolePermissions,
             timestamp: Date.now()
           }))
         }
       } catch (summaryErr) {
         console.log("⚠️ Summary API error, keeping role-based permissions:", summaryErr)
         // Cache the role-based result
+        const currentRolePermissions = getWorkingRoleBasedPermissions(user.role)
         localStorage.setItem(`permissions_${user.email}`, JSON.stringify({
-          permissions: rolePermissions,
+          permissions: currentRolePermissions,
           timestamp: Date.now()
         }))
       }
@@ -325,7 +340,17 @@ export function usePermissions() {
           "target_report"
         ]
       case "service_manager":
-        return []
+        return [
+          "dashboard",
+          "ro_billing_dashboard",
+          "operations_dashboard", 
+          "warranty_dashboard",
+          "service_booking_dashboard",
+          "ro_billing_upload",
+          "operations_upload",
+          "warranty_upload",
+          "service_booking_upload"
+        ]
       case "service_advisor":
         return [
           "dashboard",

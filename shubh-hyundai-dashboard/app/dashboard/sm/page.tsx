@@ -3,20 +3,57 @@
 import React, { useState, useEffect, useCallback, useRef } from "react"
 import { useAuth } from "@/lib/auth-context"
 import { usePermissions } from "@/hooks/usePermissions"
+import { useDashboardData } from "@/hooks/useDashboardData"
+import { useDashboard } from "@/contexts/DashboardContext"
+import { useCrossTabCacheInvalidation } from "@/hooks/useDataUploadNotification"
+import { getApiUrl } from "@/lib/config"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { TrendingUp, Upload, FileText, DollarSign, Clock, Shield, Calendar, BarChart3, Loader2, CheckCircle, Car, Wrench, Gauge, Activity, Users, AlertCircle, Search, CalendarIcon, RefreshCw } from "lucide-react"
-import { useRouter } from "next/navigation"
-import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts"
-import { getApiUrl } from "@/lib/config"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { TrendingUp, Upload, FileText, DollarSign, Clock, Shield, Calendar, BarChart3, Loader2, CheckCircle, Car, Wrench, Gauge, Activity, Users, AlertCircle, Search, CalendarIcon, RefreshCw, X } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts"
 
 type DataType = "ro_billing" | "operations" | "warranty" | "service_booking" | "repair_order_list" | "average"
 
 const COLORS = ['#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
+
+// Format R/O Date function
+const formatRODate = (roDate: any): string => {
+  if (!roDate) return 'N/A'
+  
+  try {
+    // Handle Excel serial numbers (like "46003.61729166667")
+    const excelSerialMatch = roDate.toString().match(/^(\d+)(\.\d+)?$/)
+    if (excelSerialMatch) {
+      const serialNumber = parseFloat(roDate)
+      const excelEpoch = new Date(1899, 11, 30) // December 30, 1899
+      const convertedDate = new Date(excelEpoch.getTime() + serialNumber * 24 * 60 * 60 * 1000)
+      return convertedDate.toLocaleDateString('en-GB') // DD/MM/YYYY format
+    }
+    
+    // Handle DD-MM-YYYY format (like "01-12-2025")
+    const ddmmyyyyMatch = roDate.toString().match(/^(\d{2})-(\d{2})-(\d{4})$/)
+    if (ddmmyyyyMatch) {
+      const [, day, month, year] = ddmmyyyyMatch
+      return `${day}/${month}/${year}`
+    }
+    
+    // Handle standard date parsing
+    const parsedDate = new Date(roDate)
+    if (!isNaN(parsedDate.getTime())) {
+      return parsedDate.toLocaleDateString('en-GB') // DD/MM/YYYY format
+    }
+    
+    return roDate.toString()
+  } catch (error) {
+    console.warn('Date formatting error for:', roDate, error)
+    return roDate.toString()
+  }
+}
 
 // Utility function to format currency with commas (Indian format)
 const formatCurrency = (amount: number): string => {
@@ -49,46 +86,22 @@ interface AdvisorOperation {
 }
 
 // Repair Order List Section Component
-const RepairOrderListSection = ({ user }: { user: any }) => {
-  const [repairOrderData, setRepairOrderData] = useState<any[]>([])
+const RepairOrderListSection = ({ user, dashboardData }: { user: any, dashboardData: any }) => {
   const [filteredData, setFilteredData] = useState<any[]>([])
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [uploadingFile, setUploadingFile] = useState(false)
   const [dateFilter, setDateFilter] = useState<string>('')
+  const [expandedAdvisors, setExpandedAdvisors] = useState<Record<string, boolean>>({})
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Fetch Repair Order List data
+  // Use dashboard data instead of separate API call
+  const repairOrderData = Array.isArray(dashboardData?.data) ? dashboardData.data : []
+  const isLoading = !dashboardData || dashboardData.isLoading
+  const error = dashboardData?.error
+
+  // Initialize filtered data when dashboard data changes
   useEffect(() => {
-    const loadRepairOrderData = async () => {
-      if (!user?.email || !user?.city) return
-
-      setIsLoading(true)
-      setError(null)
-
-      try {
-        const response = await fetch(
-          getApiUrl(`/api/service-manager/dashboard-data?uploadedBy=${user.email}&city=${user.city}&dataType=repair_order_list`)
-        )
-
-        if (!response.ok) {
-          throw new Error("Failed to fetch Repair Order List data")
-        }
-
-        const result = await response.json()
-        const data = Array.isArray(result.data) ? result.data : []
-        setRepairOrderData(data)
-        setFilteredData(data) // Initialize filtered data
-      } catch (err) {
-        console.error("Error loading Repair Order List data:", err)
-        setError("Failed to load Repair Order List data.")
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    loadRepairOrderData()
-  }, [user?.email, user?.city])
+    setFilteredData(repairOrderData)
+  }, [repairOrderData])
 
   // Filter data by date when dateFilter changes
   useEffect(() => {
@@ -299,188 +312,269 @@ Upload Time: ${result.uploadDate}`)
   }, {})
 
   return (
-    <Card className="border-2 border-indigo-200 bg-gradient-to-br from-white to-indigo-50/30 shadow-lg">
-      <CardHeader className="bg-gradient-to-r from-indigo-50 to-purple-50 border-b border-indigo-200">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="rounded-lg bg-indigo-100 p-2">
-              <FileText className="h-5 w-5 text-indigo-600" />
-            </div>
-            <div>
-              <CardTitle className="text-xl text-gray-900">Repair Order List</CardTitle>
-              <CardDescription>Service Advisor → Work Type → Status breakdown with date filtering</CardDescription>
-            </div>
+  <Card className="border-2 border-indigo-200 bg-gradient-to-br from-white to-indigo-50/30 shadow-lg">
+    <CardHeader className="bg-gradient-to-r from-indigo-50 to-purple-50 border-b border-indigo-200">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="rounded-lg bg-indigo-100 p-2">
+            <FileText className="h-5 w-5 text-indigo-600" />
           </div>
-          <div className="flex items-center gap-3">
-            <Badge variant="secondary" className="bg-indigo-100 text-indigo-800">
-              {filteredData.length} / {repairOrderData.length} Records
-            </Badge>
-            <div className="flex items-center gap-2">
-              <label htmlFor="date-filter" className="text-sm font-medium text-gray-700">
-                Filter by R/O Date:
-              </label>
-              <input
-                id="date-filter"
-                type="date"
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
-                className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-              {dateFilter && (
-                <Button
-                  onClick={() => setDateFilter('')}
-                  variant="outline"
-                  size="sm"
-                  className="text-xs"
-                >
-                  Clear
-                </Button>
-              )}
-            </div>
-            <div>
-              <input
-                type="file"
-                ref={fileInputRef}
-                accept=".xlsx,.xls"
-                onChange={handleFileChange}
-                disabled={uploadingFile}
-                className="hidden"
-                id="repair-order-file-input"
-              />
-              <label htmlFor="repair-order-file-input">
-                <Button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploadingFile}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white"
-                  size="sm"
-                >
-                  {uploadingFile ? (
-                    <>
-                      <div className="animate-spin mr-2 h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
-                      Uploading...
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="mr-2 h-4 w-4" />
-                      Upload Excel
-                    </>
-                  )}
-                </Button>
-              </label>
-            </div>
+          <div>
+            <CardTitle className="text-xl text-gray-900">Repair Order List</CardTitle>
+            <CardDescription>Service Advisor → Work Type → Status breakdown with date filtering</CardDescription>
           </div>
         </div>
-      </CardHeader>
+        <div className="flex items-center gap-3">
+          <Badge variant="secondary" className="bg-indigo-100 text-indigo-800">
+            {filteredData.length} Records
+          </Badge>
+          <div className="flex items-center gap-2">
+            <label htmlFor="date-filter" className="text-sm font-medium text-gray-700">
+              Filter by R/O Date:
+            </label>
+            <input
+              id="date-filter"
+              type="date"
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value)}
+              className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+            {dateFilter && (
+              <Button
+                onClick={() => setDateFilter('')}
+                variant="outline"
+                size="sm"
+                className="text-xs"
+              >
+                Clear
+              </Button>
+            )}
+          </div>
+          <div>
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept=".xlsx,.xls"
+              onChange={handleFileChange}
+              disabled={uploadingFile}
+              className="hidden"
+              id="repair-order-file-input"
+            />
+            <label htmlFor="repair-order-file-input">
+              <Button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingFile}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                size="sm"
+              >
+                {uploadingFile ? (
+                  <>
+                    <div className="animate-spin mr-2 h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+                    Uploading...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="mr-2 h-4 w-4" />
+                    Upload Excel
+                  </>
+                )}
+              </Button>
+            </label>
+          </div>
+        </div>
+      </div>
+    </CardHeader>
 
-      <CardContent className="p-6">
-        {isLoading ? (
-          <div className="text-center py-12">
-            <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-indigo-100 mb-4">
-              <div className="animate-spin">
-                <FileText className="h-6 w-6 text-indigo-600" />
-              </div>
+    <CardContent className="p-6">
+      {isLoading ? (
+        <div className="text-center py-12">
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-indigo-100 mb-4">
+            <div className="animate-spin">
+              <FileText className="h-6 w-6 text-indigo-600" />
             </div>
-            <p className="text-gray-600">Loading Repair Order List...</p>
           </div>
-        ) : error ? (
-          <div className="bg-red-50 border border-red-300 rounded-lg p-6 text-center">
-            <AlertCircle className="h-10 w-10 text-red-600 mx-auto mb-3" />
-            <p className="text-red-800 font-semibold">{error}</p>
-          </div>
-        ) : Object.keys(groupedData).length === 0 ? (
-          <div className="bg-blue-50 border border-blue-300 rounded-lg p-8 text-center">
-            <FileText className="h-12 w-12 text-blue-600 mx-auto mb-4" />
-            <p className="text-gray-800 font-semibold text-lg">No Repair Order Data</p>
-            <p className="text-gray-600 text-sm mt-2">Please upload a Repair Order List Excel file to see the data.</p>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {Object.entries(groupedData).map(([advisor, workTypes]: [string, any]) => (
+          <p className="text-gray-600">Loading Repair Order List...</p>
+        </div>
+      ) : error ? (
+        <div className="bg-red-50 border border-red-300 rounded-lg p-6 text-center">
+          <AlertCircle className="h-10 w-10 text-red-600 mx-auto mb-3" />
+          <p className="text-red-800 font-semibold">{error}</p>
+        </div>
+      ) : Object.keys(groupedData).length === 0 ? (
+        <div className="bg-blue-50 border border-blue-300 rounded-lg p-8 text-center">
+          <FileText className="h-12 w-12 text-blue-600 mx-auto mb-4" />
+          <p className="text-gray-800 font-semibold text-lg">No Repair Order Data</p>
+          <p className="text-gray-600 text-sm mt-2">Please upload a Repair Order List Excel file to see the data.</p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {Object.entries(groupedData).map(([advisor, workTypes]: [string, any]) => {
+            // Calculate total records for this advisor
+            let advisorTotalRecords = 0;
+            Object.values(workTypes).forEach((statuses: any) => {
+              Object.values(statuses).forEach((records: any) => {
+                advisorTotalRecords += records.length;
+              });
+            });
+            
+            return (
               <Card key={advisor} className="border border-gray-200">
-                <CardHeader className="bg-gradient-to-r from-indigo-50 to-white py-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center">
-                      <span className="text-indigo-700 font-bold text-sm">
-                        {advisor.charAt(0).toUpperCase()}
-                      </span>
+                <CardHeader 
+                  className="bg-gradient-to-r from-indigo-50 to-white py-3 cursor-pointer hover:bg-indigo-100 transition-colors"
+                  onClick={() => setExpandedAdvisors(prev => ({ ...prev, [advisor]: !prev[advisor] }))}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center">
+                        <span className="text-indigo-700 font-bold text-sm">
+                          {advisor.charAt(0).toUpperCase()}
+                        </span>
+                      </div>
+                      <CardTitle className="text-lg text-gray-900">{advisor}</CardTitle>
+                      <Badge variant="outline" className="bg-indigo-50 text-indigo-700">
+                        Service Advisor
+                      </Badge>
                     </div>
-                    <CardTitle className="text-lg text-gray-900">{advisor}</CardTitle>
-                    <Badge variant="outline" className="bg-indigo-50 text-indigo-700">
-                      Service Advisor
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="bg-purple-50 text-purple-700">
+                        {Object.keys(workTypes).length} Work Types
+                      </Badge>
+                      <Badge variant="outline" className="bg-green-50 text-green-700">
+                        {advisorTotalRecords} Records
+                      </Badge>
+                      <div className="text-gray-400">
+                        {expandedAdvisors[advisor] ? '▼' : '▶'}
+                      </div>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent className="p-4">
-                  {Object.entries(workTypes).map(([workType, statuses]: [string, any]) => (
-                    <div key={workType} className="mb-6 last:mb-0">
-                      <div className="flex items-center gap-2 mb-3">
-                        <div className="w-6 h-6 rounded bg-purple-100 flex items-center justify-center">
-                          <Wrench className="h-3 w-3 text-purple-600" />
-                        </div>
-                        <h4 className="font-semibold text-gray-800">{workType}</h4>
-                        <Badge variant="outline" className="bg-purple-50 text-purple-700 text-xs">
-                          Work Type
-                        </Badge>
-                      </div>
-                      
-                      {Object.entries(statuses)
-                        .filter(([status, records]: [string, any]) => records.length > 0) // Only show statuses with records
-                        .map(([status, records]: [string, any]) => (
-                        <div key={status} className="ml-8 mb-4">
-                          <div className="flex items-center gap-2 mb-2">
-                            <div className="w-4 h-4 rounded bg-green-100 flex items-center justify-center">
-                              <CheckCircle className="h-2 w-2 text-green-600" />
-                            </div>
-                            <h5 className="font-medium text-gray-700">{status} - {records.length}</h5>
-                            <Badge variant="outline" className="bg-green-50 text-green-700 text-xs">
-                              {records.length} Records
-                            </Badge>
-                          </div>
-                          
-                          {/* Show detailed table only for Open status */}
-                          {status.toLowerCase() === 'open' && (
-                            <div className="ml-6 overflow-x-auto">
-                              <table className="w-full text-sm border border-gray-200 rounded-lg">
-                                  <thead>
-                                    <tr className="bg-gray-50 border-b">
-                                      <th className="text-left py-2 px-3 font-medium text-gray-700">Model</th>
-                                      <th className="text-left py-2 px-3 font-medium text-gray-700">Reg No</th>
-                                      <th className="text-left py-2 px-3 font-medium text-gray-700">R/O No</th>
-                                      <th className="text-left py-2 px-3 font-medium text-gray-700">R/O Date</th>
-                                      <th className="text-left py-2 px-3 font-medium text-gray-700">VIN</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {records.map((record: any, idx: number) => (
-                                      <tr key={idx} className="border-b hover:bg-green-50">
-                                        <td className="py-2 px-3">{record.model}</td>
-                                        <td className="py-2 px-3">{record.reg_no}</td>
-                                        <td className="py-2 px-3 font-medium">{record.ro_no}</td>
-                                        <td className="py-2 px-3 text-blue-600">{record.ro_date}</td>
-                                        <td className="py-2 px-3 text-xs text-gray-600">{record.vin}</td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
+                  {expandedAdvisors[advisor] ? (
+                    // Expanded view with all details
+                    <>
+                      {Object.entries(workTypes).map(([workType, statuses]: [string, any]) => {
+                        // Calculate total records for this work type
+                        let workTypeTotalRecords = 0;
+                        Object.values(statuses as any).forEach((records: any) => {
+                          workTypeTotalRecords += records.length;
+                        });
+                        
+                        return (
+                          <div key={workType} className="mb-6 last:mb-0">
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center gap-2">
+                                <div className="w-6 h-6 rounded bg-purple-100 flex items-center justify-center">
+                                  <Wrench className="h-3 w-3 text-purple-600" />
+                                </div>
+                                <h4 className="font-semibold text-gray-800">{workType}</h4>
+                                <Badge variant="outline" className="bg-purple-50 text-purple-700 text-xs">
+                                  Work Type
+                                </Badge>
                               </div>
-                          )}
-                        </div>
-                      ))}
+                              <Badge variant="outline" className="bg-blue-50 text-blue-700">
+                                {workTypeTotalRecords} Records
+                              </Badge>
+                            </div>
+                            
+                            {Object.entries(statuses)
+                              .filter(([status, records]: [string, any]) => records.length > 0)
+                              .map(([status, records]: [string, any]) => (
+                                <div key={status} className="ml-8 mb-4">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <div className="w-4 h-4 rounded bg-green-100 flex items-center justify-center">
+                                      <CheckCircle className="h-2 w-2 text-green-600" />
+                                    </div>
+                                    <h5 className="font-medium text-gray-700">{status} - {records.length}</h5>
+                                   
+                                  </div>
+                                  
+                                  {/* Show detailed table only for Open status */}
+                                  {status.toLowerCase() === 'open' && (
+                                    <div className="ml-6 overflow-x-auto">
+                                      <table className="w-full text-sm border border-gray-200 rounded-lg">
+                                        <thead>
+                                          <tr className="bg-gray-50 border-b">
+                                            <th className="text-left py-2 px-3 font-medium text-gray-700">Model</th>
+                                            <th className="text-left py-2 px-3 font-medium text-gray-700">Reg No</th>
+                                            <th className="text-left py-2 px-3 font-medium text-gray-700">R/O No</th>
+                                            <th className="text-left py-2 px-3 font-medium text-gray-700">R/O Date</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {records.map((record: any, idx: number) => (
+                                            <tr key={idx} className="border-b hover:bg-green-50">
+                                              <td className="py-2 px-3">{record.model}</td>
+                                              <td className="py-2 px-3">{record.reg_no}</td>
+                                              <td className="py-2 px-3 font-medium">{record.ro_no}</td>
+                                              <td className="py-2 px-3 text-blue-600">{formatRODate(record.ro_date)}</td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                          </div>
+                        );
+                      })}
+                    </>
+                  ) : (
+                    // Collapsed view - show summary of work types
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {Object.entries(workTypes).map(([workType, statuses]: [string, any]) => {
+                        // Calculate total records for this work type
+                        let workTypeTotalRecords = 0;
+                        Object.values(statuses as any).forEach((records: any) => {
+                          workTypeTotalRecords += records.length;
+                        });
+                        
+                        // Count open records specifically
+                        const openRecords = statuses['Open'] ? statuses['Open'].length : 0;
+                        
+                        return (
+                          <div 
+                            key={workType} 
+                            className="border border-gray-200 rounded-lg p-3 hover:bg-gray-50 transition-colors"
+                          >
+                            <div className="flex items-center gap-2 mb-2">
+                              <div className="w-5 h-5 rounded bg-purple-100 flex items-center justify-center">
+                                <Wrench className="h-2.5 w-2.5 text-purple-600" />
+                              </div>
+                              <span className="font-medium text-gray-800 text-sm">{workType}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-xs">
+                              <div className="flex items-center gap-1">
+                                <div className="w-3 h-3 rounded-full bg-green-100 flex items-center justify-center">
+                                  <CheckCircle className="h-1.5 w-1.5 text-green-600" />
+                                </div>
+                                <span className="text-gray-600">{workTypeTotalRecords} Records</span>
+                              </div>
+                              {openRecords > 0 && (
+                                <Badge variant="outline" className="bg-orange-50 text-orange-700">
+                                  {openRecords} Open
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                  ))}
+                  )}
                 </CardContent>
               </Card>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
+            );
+          })}
+        </div>
+      )}
+    </CardContent>
+  </Card>
+)}
 
-// Advisor Operations Section Component
+// Advisor Operations Section Component - Integrated Operations Upload Interface
 const AdvisorOperationsSection = ({ user }: { user: any }) => {
+  const { markForRefresh } = useDashboard()
   const [advisors, setAdvisors] = useState<string[]>([])
   const [operationsData, setOperationsData] = useState<AdvisorOperation[]>([])
   const [roData, setRoData] = useState<any[]>([])
@@ -597,6 +691,13 @@ const AdvisorOperationsSection = ({ user }: { user: any }) => {
       if (refreshResponse.ok) {
         const refreshResult = await refreshResponse.json()
         setOperationsData(refreshResult.data || [])
+      }
+      
+      // ✅ Invalidate dashboard cache for operations so main dashboard shows new data instantly
+      if (user?.email) {
+        markForRefresh(user.email, 'operations', user.city || 'default')
+        markForRefresh(user.email, 'average', user.city || 'default')
+        console.log('🔄 Operations cache invalidated from integrated component - main dashboard will show new data instantly')
       }
     } catch (err: any) {
       console.error("Upload error:", err)
@@ -947,13 +1048,24 @@ const AdvisorOperationsSection = ({ user }: { user: any }) => {
 export default function SMDashboard() {
   const { user } = useAuth()
   const { hasPermission } = usePermissions()
+  const { markForRefresh } = useDashboard()
   const router = useRouter()
   
   // Declare ALL useState hooks first (before any conditional logic)
   const [selectedDataType, setSelectedDataType] = useState<DataType>("average")
-  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  
+  // ✅ Use global state for dashboard data (skip for operations as it has its own data management)
+  const { 
+    data: dashboardData, 
+    isLoading, 
+    error, 
+    hasData,
+    refreshData 
+  } = useDashboardData({ 
+    dataType: selectedDataType,
+    autoFetch: selectedDataType !== "operations", // Don't auto-fetch for operations
+    backgroundRevalidation: selectedDataType !== "operations" // No background revalidation for operations
+  })
   const [workTypeData, setWorkTypeData] = useState([
     { name: 'Paid Service', value: 0, color: '#0ea5e9', description: 'Regular paid services' },
     { name: 'Free Service', value: 0, color: '#10b981', description: 'Complimentary services' },
@@ -964,70 +1076,11 @@ export default function SMDashboard() {
   const [hoveredAdvisor, setHoveredAdvisor] = useState<string | null>(null)
   const [showWithTax, setShowWithTax] = useState<boolean>(false)
   const [workTypeDataFetched, setWorkTypeDataFetched] = useState(false)
-  const fetchedDataTypes = useRef<Set<string>>(new Set())
-
-  // Function definitions (before useEffect hooks) - memoized to prevent infinite re-renders
-  const fetchDashboardData = useCallback(async (dataType: DataType) => {
-    if (!user?.email || !user?.city) return
-
-    // Prevent duplicate fetches - but allow refresh when explicitly cleared
-    const fetchKey = `${dataType}-${user.email}`
-    if (fetchedDataTypes.current.has(fetchKey)) {
-      console.log('⏭️ Skipping fetch - already loaded:', fetchKey)
-      return
-    }
-    
-    console.log('🚀 Fetching fresh data for:', fetchKey)
-    fetchedDataTypes.current.add(fetchKey)
-
-    setIsLoading(true)
-    setError(null)
-
-    try {
-      let apiUrl: string
-      
-      // Use specialized BookingList API for service_booking with VIN matching
-      if (dataType === 'service_booking') {
-        // Use the actual showroom_id from the database: 64f8a1b2c3d4e5f6a7b8c9d1
-        const userShowroomId = '64f8a1b2c3d4e5f6a7b8c9d1'; // Updated to match database records
-        apiUrl = getApiUrl(`/api/booking-list/dashboard?uploadedBy=${user.email}&city=${user.city}&showroom_id=${userShowroomId}`)
-        console.log('🔗 Fetching BookingList with VIN matching:', dataType)
-        console.log('🏢 Using showroom_id:', userShowroomId)
-        console.log('👤 User email:', user.email)
-        console.log('🏙️ User city:', user.city)
-      } else {
-        apiUrl = getApiUrl(`/api/service-manager/dashboard-data?uploadedBy=${user.email}&city=${user.city}&dataType=${dataType}`)
-        console.log('🔗 Fetching:', dataType)
-      }
-      
-      const response = await fetch(apiUrl)
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        console.error('❌ API Error:', response.status, errorText)
-        throw new Error(`Failed to fetch data: ${response.status} ${response.statusText}`)
-      }
-
-      const data = await response.json()
-      console.log('✅ Loaded:', dataType, '- Records:', data?.summary?.totalBookings || data?.count)
-      console.log('📊 Full API Response:', data)
-      
-      // Ensure data has the correct structure
-      if (data && typeof data === 'object') {
-        setDashboardData({
-          ...data,
-          data: Array.isArray(data.data) ? data.data : []
-        })
-      } else {
-        setDashboardData(null)
-      }
-    } catch (err) {
-      setError("Failed to load data. Please try again.")
-      console.error(err)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [user?.email, user?.city])
+  
+  // Service Booking filter states
+  const [dateFilter, setDateFilter] = useState('')
+  const [selectedWorkType, setSelectedWorkType] = useState('all')
+  const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({})
 
   // ALL useEffect hooks must be declared here (before any conditional returns)
   
@@ -1043,34 +1096,10 @@ export default function SMDashboard() {
     }
   }, [hasPermission])
 
-  // Clear fetch cache when user changes
+  // Clear work type data when user changes
   useEffect(() => {
-    fetchedDataTypes.current.clear()
     setWorkTypeDataFetched(false)
   }, [user?.email])
-
-  // Fetch dashboard data when selectedDataType changes or component mounts
-  useEffect(() => {
-    if (selectedDataType && user?.email && user?.city && !isLoading && 
-        (hasPermission('ro_billing_dashboard') || hasPermission('operations_dashboard') || 
-         hasPermission('warranty_dashboard') || hasPermission('service_booking_dashboard') || 
-         hasPermission('repair_order_list_dashboard') || hasPermission('dashboard'))) {
-      
-      // Clear previous data and force refresh when switching dashboard types
-      console.log('🔄 Dashboard type changed to:', selectedDataType)
-      setDashboardData(null)
-      setError(null)
-      
-      // Remove from cache to force fresh fetch (use same key format as fetchDashboardData)
-      const fetchKey = `${selectedDataType}-${user.email}`
-      fetchedDataTypes.current.delete(fetchKey)
-      console.log('🗑️ Cleared cache for:', fetchKey)
-      
-      // Fetch new data
-      fetchDashboardData(selectedDataType)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDataType, user?.email, user?.city])
 
   // Fetch work type data for Average dashboard - only once when component mounts
   useEffect(() => {
@@ -1144,6 +1173,11 @@ export default function SMDashboard() {
       }
     }
   }, [selectedDataType, dashboardData, selectedDate])
+
+  // Reset expanded cards when Service Booking date filter changes
+  useEffect(() => {
+    setExpandedCards({})
+  }, [dateFilter])
 
   // ✅ UPDATED: Check permissions only - all service managers need proper permissions
   if (!hasPermission('ro_billing_dashboard') && !hasPermission('operations_dashboard') && 
@@ -1251,50 +1285,60 @@ export default function SMDashboard() {
       )
     }
 
-    if (isLoading) {
+    // ✅ Show loading screen on first time or when loading without cached data
+    if (isLoading && !dashboardData) {
       return (
         <Card className="border-gray-200">
           <CardContent className="p-12 text-center">
             <Loader2 className="h-12 w-12 mx-auto mb-4 text-blue-600 animate-spin" />
-            <p className="text-gray-600">Loading data...</p>
+            <p className="text-gray-600 text-lg font-medium">Loading Dashboard Data</p>
+            <p className="text-sm text-gray-500 mt-2">Fetching {selectedDataType.replace('_', ' ').toUpperCase()} data from server...</p>
+            <div className="mt-4 flex justify-center">
+              <div className="flex space-x-1">
+                <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce"></div>
+                <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+              </div>
+            </div>
           </CardContent>
         </Card>
       )
     }
 
-    if (error) {
+    // ✅ Show error ONLY if we have error and no cached data to fall back to
+    if (error && !dashboardData) {
       return (
         <Card className="border-red-200 bg-red-50">
-          <CardContent className="p-12 text-center">
-            <p className="text-red-600 font-medium">{error}</p>
+          <CardContent className="p-8 text-center">
+            <AlertCircle className="h-12 w-12 text-red-600 mx-auto mb-4" />
+            <h3 className="text-xl font-semibold text-red-800 mb-2">Error Loading Data</h3>
+            <p className="text-red-600 mb-4">{error}</p>
+            <Button onClick={() => refreshData()} variant="outline" className="border-red-300 text-red-700 hover:bg-red-100">
+              <Activity className="mr-2 h-4 w-4" />
+              Try Again
+            </Button>
           </CardContent>
         </Card>
       )
     }
 
-    if (!dashboardData) {
+    // ✅ Show "No Data Available" ONLY after loading is complete and confirmed no data
+    if (!isLoading && !error && dashboardData && (!dashboardData.data || dashboardData.data.length === 0)) {
       return (
         <Card className="border-gray-200 bg-gradient-to-br from-gray-50 to-white">
           <CardContent className="p-12 text-center">
             <FileText className="h-16 w-16 mx-auto mb-4 text-gray-400" />
             <h3 className="text-xl font-semibold text-gray-700 mb-2">No Data Available</h3>
             <p className="text-gray-500 mb-4">
-              No data found for the selected type. This could mean:
+              No data found for {selectedDataType}. This could mean:
             </p>
             <div className="text-left max-w-md mx-auto space-y-2 text-sm text-gray-600">
-              <p>• No files have been uploaded yet</p>
+              <p>• No files have been uploaded for this data type</p>
               <p>• Data is still being processed</p>
-              <p>• You may need to refresh the page</p>
+              <p>• Try refreshing or check other data types</p>
             </div>
             <Button 
-              onClick={() => {
-                console.log('🔄 Refresh from empty state')
-                fetchedDataTypes.current.clear()
-                setDashboardData(null)
-                if (selectedDataType) {
-                  fetchDashboardData(selectedDataType)
-                }
-              }}
+              onClick={() => refreshData()}
               className="mt-6"
               variant="outline"
             >
@@ -1306,37 +1350,81 @@ export default function SMDashboard() {
       )
     }
 
-    // Render based on data type
-    if (selectedDataType === "average") {
-      return renderAverageView()
-    } else {
-      return renderSpecificDataView()
+    // ✅ For operations, always show the interface (no data dependency)
+    if (selectedDataType === "operations") {
+      return <AdvisorOperationsSection user={user} />
     }
+
+    // ✅ If we have data, show it (even if loading in background)
+    if (dashboardData) {
+      return (
+        <div className="relative">
+          {/* Background loading indicator */}
+          {isLoading && (
+            <div className="absolute top-2 right-2 z-10">
+              <div className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Updating...
+              </div>
+            </div>
+          )}
+          
+          {/* Render based on data type */}
+          {selectedDataType === "average" ? renderAverageView() : renderSpecificDataView()}
+        </div>
+      )
+    }
+
+    // ✅ Fallback: This should rarely be reached with the global state system
+    return (
+      <Card className="border-gray-200">
+        <CardContent className="p-12 text-center">
+          <div className="animate-pulse">
+            <div className="h-4 bg-gray-200 rounded w-3/4 mx-auto mb-4"></div>
+            <div className="h-4 bg-gray-200 rounded w-1/2 mx-auto"></div>
+          </div>
+          <p className="text-gray-500 mt-4">Preparing dashboard...</p>
+        </CardContent>
+      </Card>
+    )
   }
 
   const renderAverageView = () => {
-    if (isLoading) {
+    // ✅ Show loading screen on first time
+    if (isLoading && !dashboardData) {
       return (
         <Card className="border-gray-200">
           <CardContent className="p-12 text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading dashboard data...</p>
+            <Loader2 className="h-12 w-12 mx-auto mb-4 text-purple-600 animate-spin" />
+            <p className="text-gray-600 text-lg font-medium">Loading Average Dashboard</p>
+            <p className="text-sm text-gray-500 mt-2">Calculating averages across all data types...</p>
+            <div className="mt-4 flex justify-center">
+              <div className="flex space-x-1">
+                <div className="w-2 h-2 bg-purple-600 rounded-full animate-bounce"></div>
+                <div className="w-2 h-2 bg-purple-600 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                <div className="w-2 h-2 bg-purple-600 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+              </div>
+            </div>
           </CardContent>
         </Card>
       )
     }
     
-    if (!dashboardData?.summary) {
+    // ✅ Only show no data if we're not loading and confirmed no data
+    if (!isLoading && !dashboardData?.summary) {
       return (
         <Card className="border-gray-200">
           <CardContent className="p-12 text-center">
-            <p className="text-gray-600">No data available. Please refresh the page.</p>
-            <button 
-              onClick={() => window.location.reload()} 
-              className="mt-2 px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700"
+            <FileText className="h-16 w-16 mx-auto mb-4 text-gray-400" />
+            <h3 className="text-xl font-semibold text-gray-700 mb-2">No Summary Data</h3>
+            <p className="text-gray-600 mb-4">No summary data available for the average view.</p>
+            <Button 
+              onClick={() => refreshData()} 
+              variant="outline"
             >
-              Refresh Page
-            </button>
+              <Activity className="mr-2 h-4 w-4" />
+              Refresh Data
+            </Button>
           </CardContent>
         </Card>
       )
@@ -1596,14 +1684,9 @@ export default function SMDashboard() {
   }
 
   const renderSpecificDataView = () => {
-    // For operations, always show the advisor operations interface
-    if (selectedDataType === "operations") {
-      return <AdvisorOperationsSection user={user} />
-    }
-
-    // For repair order list, show the repair order list interface
+    // For repair order list, show the repair order list interface using dashboard data
     if (selectedDataType === "repair_order_list") {
-      return <RepairOrderListSection user={user} />
+      return <RepairOrderListSection user={user} dashboardData={dashboardData} />
     }
 
     if (!dashboardData?.data || dashboardData.data.length === 0) {
@@ -1678,9 +1761,11 @@ export default function SMDashboard() {
         const totalRevenue = totalLabour + totalParts
         return { totalRevenue, totalLabour, totalParts, count: data.length }
       } else if (selectedDataType === "operations") {
-        const totalAmount = data.reduce((sum: number, row: any) => sum + (row.amount || 0), 0)
-        const totalCount = data.reduce((sum: number, row: any) => sum + (row.count || 0), 0)
-        return { totalAmount, totalCount, count: data.length }
+        // Use API summary data for operations
+        const totalAmount = dashboardData.summary?.totalAmount || 0
+        const totalCount = dashboardData.summary?.totalCount || 0
+        const count = data?.length || 0
+        return { totalAmount, totalCount, count }
       } else if (selectedDataType === "warranty") {
         // Use API summary data instead of calculating from raw data
         const totalLabour = dashboardData.summary?.totalLabourAmount || 0
@@ -1749,14 +1834,7 @@ export default function SMDashboard() {
               {renderMetricCard("Total Revenue (Labour + Parts)", formatCurrency(metrics.totalRevenue || 0), <DollarSign className="h-5 w-5" />, "emerald")}
             </>
           )}
-          {selectedDataType === "operations" && (
-            <>
-              {renderMetricCard("Total Records", formatNumber(metrics.count), <FileText className="h-5 w-5" />, "blue")}
-              {renderMetricCard("Total Amount", formatCurrency(metrics.totalAmount || 0), <DollarSign className="h-5 w-5" />, "emerald")}
-              {renderMetricCard("Total Count", formatNumber(metrics.totalCount || 0), <BarChart3 className="h-5 w-5" />, "purple")}
-              {renderMetricCard("Avg per Item", formatCurrency(metrics.totalCount ? ((metrics.totalAmount || 0) / metrics.totalCount) : 0), <TrendingUp className="h-5 w-5" />, "orange")}
-            </>
-          )}
+          {/* Operations metrics are now handled within the AdvisorOperationsSection component */}
           {selectedDataType === "warranty" && (
             <>
               {renderMetricCard("Total Claims", formatNumber(metrics.count), <Shield className="h-5 w-5" />, "blue")}
@@ -1765,15 +1843,109 @@ export default function SMDashboard() {
               {renderMetricCard("Parts", formatCurrency(metrics.totalPart || 0), <BarChart3 className="h-5 w-5" />, "orange")}
             </>
           )}
-          {selectedDataType === "service_booking" && (
-            <>
-              {renderMetricCard("Total Bookings", formatNumber(metrics.count), <Calendar className="h-5 w-5" />, "blue")}
-              {renderMetricCard("Completed (Close)", formatNumber(metrics.completed || 0), <CheckCircle className="h-5 w-5" />, "emerald")}
-              {renderMetricCard("Pending (In Progress)", formatNumber(metrics.pending || 0), <Clock className="h-5 w-5" />, "orange")}
-              {renderMetricCard("Open", formatNumber(metrics.open || 0), <FileText className="h-5 w-5" />, "blue")}
-              {renderMetricCard("Cancelled", formatNumber(metrics.cancelled || 0), <TrendingUp className="h-5 w-5" />, "red")}
-            </>
-          )}
+          {selectedDataType === "service_booking" && (() => {
+            const statusData = dashboardData.summary?.statusBreakdown || []
+            const vinMatching = dashboardData.vinMatching || {}
+            
+            // Calculate actual booking status counts from raw data
+            let rawData = Array.isArray(dashboardData.data) ? dashboardData.data : []
+            
+            // Apply date filter if selected
+            if (dateFilter) {
+              rawData = rawData.filter(item => {
+                const bookingDate = item.bt_date_time || item.bookingDate || item.date
+                if (bookingDate) {
+                  try {
+                    // Handle different date formats and validate
+                    let dateObj = new Date(bookingDate)
+                    
+                    // If invalid date, try parsing as DD/MM/YYYY or other formats
+                    if (isNaN(dateObj.getTime())) {
+                      // Try DD/MM/YYYY format
+                      if (typeof bookingDate === 'string' && bookingDate.includes('/')) {
+                        const parts = bookingDate.split('/')
+                        if (parts.length === 3) {
+                          // Assume DD/MM/YYYY format
+                          dateObj = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`)
+                        }
+                      }
+                    }
+                    
+                    // Final validation
+                    if (!isNaN(dateObj.getTime())) {
+                      const itemDate = dateObj.toISOString().split('T')[0]
+                      return itemDate === dateFilter
+                    }
+                  } catch (error) {
+                    console.warn('📅 Invalid date format:', bookingDate, error)
+                  }
+                }
+                return false
+              })
+            }
+            
+            // Debug: Log first few records to see actual field names
+            if (rawData.length > 0) {
+              console.log('📊 Service Booking Sample Data:', rawData[0])
+              console.log('📊 Available fields:', Object.keys(rawData[0]))
+            }
+            
+            // Try to calculate status counts from raw data
+            let statusCounts = {
+              total: rawData.length,
+              // Try multiple possible status field names and values
+              completed: rawData.filter(item => {
+                const status = (item.status || item.booking_status || item.bt_status || '').toLowerCase().trim()
+                return status === 'close' || status === 'closed' || status === 'completed' || status === 'complete' || status === 'done'
+              }).length,
+              pending: rawData.filter(item => {
+                const status = (item.status || item.booking_status || item.bt_status || '').toLowerCase().trim()
+                return status === 'pending' || status === 'in progress' || status === 'inprogress' || status === 'processing'
+              }).length,
+              open: rawData.filter(item => {
+                const status = (item.status || item.booking_status || item.bt_status || '').toLowerCase().trim()
+                return status === 'open' || status === 'new' || status === 'booked' || status === 'confirmed' || status === 'active' || status === 'scheduled'
+              }).length,
+              cancelled: rawData.filter(item => {
+                const status = (item.status || item.booking_status || item.bt_status || '').toLowerCase().trim()
+                return status === 'cancel' || status === 'cancelled' || status === 'canceled' || status === 'rejected'
+              }).length
+            }
+            
+            // Debug: Show all unique status values to help identify correct field names
+            const uniqueStatuses = [...new Set(rawData.map(item => {
+              const status = item.status || item.booking_status || item.bt_status || 'NO_STATUS'
+              return status
+            }))]
+            console.log('📊 Unique status values found:', uniqueStatuses)
+            
+            // If no status data found in raw data, use VIN matching and status breakdown as fallback
+            if (statusCounts.completed === 0 && statusCounts.pending === 0 && statusCounts.open === 0 && statusCounts.cancelled === 0 && statusCounts.total > 0) {
+              console.log('📊 No status fields found in raw data, using VIN matching data as fallback')
+              statusCounts = {
+                total: vinMatching.totalBookings || statusData.reduce((sum, s) => sum + s.count, 0) || rawData.length,
+                completed: statusData.find(s => s.category === 'converted')?.count || 0,
+                pending: statusData.find(s => s.category === 'processing')?.count || 0,
+                open: statusData.find(s => s.category === 'tomorrow')?.count || 0,
+                cancelled: statusData.find(s => s.status?.toLowerCase().includes('cancel'))?.count || 0
+              }
+            }
+            
+            // Debug: Log status counts
+            console.log('📊 Final Status Counts:', statusCounts)
+            console.log('📊 VIN Matching Data:', vinMatching)
+            console.log('📊 Status Breakdown Data:', statusData)
+            
+            return (
+              <>
+                {renderMetricCard("Total Bookings", formatNumber(statusCounts.total), <Calendar className="h-5 w-5" />, "blue")}
+                {renderMetricCard("Completed (Close)", formatNumber(statusCounts.completed), <CheckCircle className="h-5 w-5" />, "emerald")}
+                {renderMetricCard("Pending (In Progress)", formatNumber(statusCounts.pending), <Clock className="h-5 w-5" />, "orange")}
+                {renderMetricCard("Open", formatNumber(statusCounts.open), <FileText className="h-5 w-5" />, "blue")}
+                {renderMetricCard("Cancelled", formatNumber(statusCounts.cancelled), <X className="h-5 w-5" />, "red")}
+              </>
+            )
+          })()}
           {selectedDataType === "repair_order_list" && (
             <>
               {renderMetricCard("Total Records", formatNumber(metrics.count), <FileText className="h-5 w-5" />, "blue")}
@@ -2563,10 +2735,6 @@ export default function SMDashboard() {
           )
         })()}
         
-        {/* Advisor Operations Upload */}
-        {selectedDataType === "operations" && (() => {
-          return <AdvisorOperationsSection user={user} />
-        })()}
         
         {/* Warranty Claims Analysis */}
         {selectedDataType === "warranty" && (() => {
@@ -2715,9 +2883,58 @@ export default function SMDashboard() {
           const statusData = dashboardData.summary?.statusBreakdown || []
           const vinMatching = dashboardData.vinMatching || {}
           
+          // Group data by advisor for individual filtering
+          // Calculate filtered data for display
+          let rawData = Array.isArray(dashboardData.data) ? dashboardData.data : []
+          
+          // Apply date filter if selected
+          if (dateFilter) {
+            rawData = rawData.filter(item => {
+              const bookingDate = item.bt_date_time || item.bookingDate || item.date
+              if (bookingDate) {
+                try {
+                  // Handle different date formats and validate
+                  let dateObj = new Date(bookingDate)
+                  
+                  // If invalid date, try parsing as DD/MM/YYYY or other formats
+                  if (isNaN(dateObj.getTime())) {
+                    // Try DD/MM/YYYY format
+                    if (typeof bookingDate === 'string' && bookingDate.includes('/')) {
+                      const parts = bookingDate.split('/')
+                      if (parts.length === 3) {
+                        // Assume DD/MM/YYYY format
+                        dateObj = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`)
+                      }
+                    }
+                  }
+                  
+                  // Final validation
+                  if (!isNaN(dateObj.getTime())) {
+                    const itemDate = dateObj.toISOString().split('T')[0]
+                    return itemDate === dateFilter
+                  }
+                } catch (error) {
+                  console.warn('📅 Invalid date format in advisor section:', bookingDate, error)
+                }
+              }
+              return false
+            })
+          }
+          
+          const advisorGroups = advisorWorkTypeData.reduce((acc, item) => {
+            if (!acc[item.advisor]) {
+              acc[item.advisor] = []
+            }
+            acc[item.advisor].push(item)
+            return acc
+          }, {} as Record<string, any[]>)
+          
           return (
             <div className="space-y-6">
-              {/* VIN Matching Summary Card */}
+              {/* Date Filter */}
+             
+
+              {/* VIN Matching Summary Card - Simplified */}
               <Card className="border-2 border-blue-200 bg-gradient-to-br from-white to-blue-50/30 shadow-lg">
                 <CardHeader>
                   <div className="flex items-center gap-3">
@@ -2731,7 +2948,7 @@ export default function SMDashboard() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                     <div className="bg-white p-4 rounded-lg border border-blue-200 shadow-sm">
                       <div className="text-center">
                         <p className="text-2xl font-bold text-blue-600">{vinMatching.totalBookings || 0}</p>
@@ -2741,15 +2958,7 @@ export default function SMDashboard() {
                     <div className="bg-green-50 p-4 rounded-lg border border-green-200 shadow-sm">
                       <div className="text-center">
                         <p className="text-2xl font-bold text-green-600">{vinMatching.matchedVINs || 0}</p>
-                        <p className="text-sm text-green-700 font-medium">VIN Matched</p>
-                        <p className="text-xs text-gray-500">Converted</p>
-                      </div>
-                    </div>
-                    <div className="bg-orange-50 p-4 rounded-lg border border-orange-200 shadow-sm">
-                      <div className="text-center">
-                        <p className="text-2xl font-bold text-orange-600">{vinMatching.unmatchedVINs || 0}</p>
-                        <p className="text-sm text-orange-700 font-medium">VIN Unmatched</p>
-                        <p className="text-xs text-gray-500">Processing/Future</p>
+                        <p className="text-sm text-green-700 font-medium">Converted</p>
                       </div>
                     </div>
                     <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 shadow-sm">
@@ -2765,7 +2974,7 @@ export default function SMDashboard() {
                 </CardContent>
               </Card>
 
-              {/* Advisor Work Type Performance */}
+              {/* Advisor Work Type Performance - Individual Filters */}
               <Card className="border-2 border-emerald-200 bg-gradient-to-br from-white to-emerald-50/30 shadow-lg">
                 <CardHeader>
                   <div className="flex items-center justify-between">
@@ -2775,177 +2984,143 @@ export default function SMDashboard() {
                       </div>
                       <div>
                         <h2 className="text-xl font-bold text-emerald-900">Advisor Work Type Performance</h2>
-                        <p className="text-sm text-emerald-700">Performance breakdown by advisor and work type based on B.T Date & Time</p>
+                        <p className="text-sm text-emerald-700">Filter bookings by B.T Date & Time and view work type details</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2">
+                        <label htmlFor="advisor-date-filter" className="text-sm font-medium text-gray-700">
+                          B.T Date & Time Filter:
+                        </label>
+                        <input
+                          id="advisor-date-filter"
+                          type="date"
+                          value={dateFilter}
+                          onChange={(e) => setDateFilter(e.target.value)}
+                          className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        />
+                        {dateFilter && (
+                          <Button
+                            onClick={() => setDateFilter('')}
+                            variant="outline"
+                            size="sm"
+                            className="text-xs"
+                          >
+                            Clear Filter
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </div>
                 </CardHeader>
                 <CardContent>
-                    <div className="space-y-4">
-                      {advisorWorkTypeData.length > 0 ? (
-                        advisorWorkTypeData.map((item, idx) => (
-                          <div key={idx} className="p-4 rounded-lg bg-white border border-gray-200 hover:border-emerald-300 transition-all shadow-sm">
-                            {/* Advisor and Work Type Header */}
-                            <div className="flex items-center justify-between mb-3">
-                              <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center">
-                                  <span className="text-sm font-bold text-emerald-700">{item.advisor.charAt(0)}</span>
-                                </div>
-                                <div>
-                                  <p className="font-semibold text-gray-900">{item.advisor}</p>
-                                  <p className="text-sm text-blue-600 font-medium">Work Type: {item.workType}</p>
-                                  <p className="text-xs text-gray-500">Total: {item.count} bookings • Conversion: {item.conversionRate}%</p>
-                                </div>
+                  <div className="space-y-4">
+                    {Object.entries(advisorGroups).map(([advisor, workTypes]) => {
+                      const cardKey = advisor
+                      const isExpanded = expandedCards[cardKey] || false
+                      const totalBookings = workTypes.reduce((sum, wt) => sum + wt.count, 0)
+                      const totalConverted = workTypes.reduce((sum, wt) => sum + wt.converted, 0)
+                      const conversionRate = totalBookings > 0 ? Math.round((totalConverted / totalBookings) * 100) : 0
+                      
+                      return (
+                        <div key={advisor} className="p-4 rounded-lg bg-white border border-gray-200 hover:border-emerald-300 transition-all shadow-sm">
+                          {/* Advisor Header - Clickable */}
+                          <div 
+                            className="flex items-center justify-between mb-3 cursor-pointer"
+                            onClick={() => setExpandedCards(prev => ({ ...prev, [cardKey]: !isExpanded }))}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center">
+                                <span className="text-sm font-bold text-emerald-700">{advisor.charAt(0)}</span>
                               </div>
+                              <div>
+                                <p className="font-semibold text-gray-900">{advisor}</p>
+                                <p className="text-sm text-blue-600 font-medium">{workTypes.length} Work Types</p>
+                                <p className="text-xs text-gray-500">Total: {totalBookings} bookings • Conversion: {conversionRate}%</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3">
                               <div className="text-right">
-                                <p className="text-xl font-bold text-emerald-700">{item.count}</p>
+                                <p className="text-xl font-bold text-emerald-700">{totalBookings}</p>
                                 <p className="text-xs text-gray-500">Total Bookings</p>
-                                <div className="mt-1">
-                                  <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full font-medium">
-                                    {item.conversionRate}% Conversion
-                                  </span>
-                                </div>
+                              </div>
+                              <div className="text-gray-400">
+                                {isExpanded ? '▼' : '▶'}
                               </div>
                             </div>
-                            
-                            {/* Status Breakdown Grid */}
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                              <div className="bg-green-50 p-3 rounded-lg border border-green-200">
-                                <div className="text-center">
-                                  <div className="text-lg mb-1">✅</div>
-                                  <p className="text-lg font-bold text-green-600">{item.converted}</p>
-                                  <p className="text-xs text-green-700 font-medium">Converted</p>
-                                  <p className="text-xs text-gray-500">Status: VIN Matched</p>
-                                </div>
-                              </div>
-                              
-                              <div className="bg-orange-50 p-3 rounded-lg border border-orange-200">
-                                <div className="text-center">
-                                  <div className="text-lg mb-1">⏳</div>
-                                  <p className="text-lg font-bold text-orange-600">{item.processing}</p>
-                                  <p className="text-xs text-orange-700 font-medium">Processing</p>
-                                  <p className="text-xs text-gray-500">Status: Past/Present</p>
-                                </div>
-                              </div>
-                              
-                              <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
-                                <div className="text-center">
-                                  <div className="text-lg mb-1">📅</div>
-                                  <p className="text-lg font-bold text-blue-600">{item.tomorrow}</p>
-                                  <p className="text-xs text-blue-700 font-medium">Tomorrow</p>
-                                  <p className="text-xs text-gray-500">Status: Next Day</p>
-                                </div>
-                              </div>
-                              
-                              <div className="bg-purple-50 p-3 rounded-lg border border-purple-200">
-                                <div className="text-center">
-                                  <div className="text-lg mb-1">🔮</div>
-                                  <p className="text-lg font-bold text-purple-600">{item.future}</p>
-                                  <p className="text-xs text-purple-700 font-medium">Future</p>
-                                  <p className="text-xs text-gray-500">Status: Future Date</p>
-                                </div>
-                              </div>
-                            </div>
-                            
-                            {/* Excel Status Breakdown */}
-                            {item.excelStatuses && Object.keys(item.excelStatuses).length > 0 && (
-                              <div className="mt-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                                <h5 className="font-semibold text-gray-800 mb-2">📄 Excel Status Breakdown</h5>
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                                  {Object.entries(item.excelStatuses).map(([status, count], statusIdx) => (
-                                    <div key={statusIdx} className="bg-white p-2 rounded border border-gray-300">
+                          </div>
+                          
+                          {/* Collapsible Work Type Details */}
+                          {isExpanded && (
+                            <div className="mt-4 space-y-4">
+                              {workTypes.map((workType, wtIdx) => (
+                                <div key={wtIdx} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                                  <div className="flex items-center justify-between mb-3">
+                                    <div>
+                                      <p className="font-medium text-gray-900">{workType.workType}</p>
+                                      <p className="text-xs text-gray-500">{workType.count} bookings • {workType.conversionRate}% conversion</p>
+                                    </div>
+                                    <div className="text-right">
+                                      <p className="text-lg font-bold text-blue-600">{workType.count}</p>
+                                    </div>
+                                  </div>
+                                  
+                                  {/* Status Breakdown for this Work Type */}
+                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                    <div className="bg-green-50 p-3 rounded-lg border border-green-200">
                                       <div className="text-center">
-                                        <p className="text-sm font-bold text-gray-700">{count}</p>
-                                        <p className="text-xs text-gray-600">{status}</p>
+                                        <div className="text-lg mb-1">✅</div>
+                                        <p className="text-lg font-bold text-green-600">{workType.converted}</p>
+                                        <p className="text-xs text-green-700 font-medium">Converted</p>
+                                        <p className="text-xs text-gray-500">Status: VIN Matched</p>
                                       </div>
                                     </div>
-                                  ))}
+                                    
+                                    <div className="bg-orange-50 p-3 rounded-lg border border-orange-200">
+                                      <div className="text-center">
+                                        <div className="text-lg mb-1">⏳</div>
+                                        <p className="text-lg font-bold text-orange-600">{workType.processing}</p>
+                                        <p className="text-xs text-orange-700 font-medium">Processing</p>
+                                        <p className="text-xs text-gray-500">Status: Past/Present</p>
+                                      </div>
+                                    </div>
+                                    
+                                    <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+                                      <div className="text-center">
+                                        <div className="text-lg mb-1">📅</div>
+                                        <p className="text-lg font-bold text-blue-600">{workType.tomorrow}</p>
+                                        <p className="text-xs text-blue-700 font-medium">Tomorrow</p>
+                                        <p className="text-xs text-gray-500">Status: Next Day</p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  
+                                  {/* Excel Status Breakdown for this Work Type */}
+                                  {workType.excelStatuses && Object.keys(workType.excelStatuses).length > 0 && (
+                                    <div className="mt-3 p-3 bg-white rounded-lg border border-gray-300">
+                                      <h6 className="font-medium text-gray-800 mb-2">📄 Excel Status Breakdown</h6>
+                                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                        {Object.entries(workType.excelStatuses).map(([status, count], statusIdx) => (
+                                          <div key={statusIdx} className="bg-gray-50 p-2 rounded border border-gray-200">
+                                            <div className="text-center">
+                                              <p className="text-sm font-bold text-gray-700">{count}</p>
+                                              <p className="text-xs text-gray-600">{status}</p>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
-                              </div>
-                            )}
-                            
-                            {/* Status Explanation */}
-                            <div className="mt-3 pt-3 border-t border-gray-100">
-                              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs text-gray-600">
-                                <div className="text-center">
-                                  <span className="text-green-600">✅ Converted:</span> VIN found in Repair Orders
-                                </div>
-                                <div className="text-center">
-                                  <span className="text-orange-600">⏳ Processing:</span> B.T Date ≤ Today
-                                </div>
-                                <div className="text-center">
-                                  <span className="text-blue-600">📅 Tomorrow:</span> B.T Date = Tomorrow
-                                </div>
-                                <div className="text-center">
-                                  <span className="text-purple-600">🔮 Future:</span> B.T Date &gt; Tomorrow
-                                </div>
-                              </div>
+                              ))}
                             </div>
-                          </div>
-                        ))
-                      ) : (
-                        <div className="text-center py-8">
-                          <p className="text-gray-500">No advisor work type data available</p>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Overall Status Summary */}
-                <Card className="border-2 border-gray-200 bg-gradient-to-br from-white to-gray-50/30 shadow-lg">
-                  <CardHeader>
-                    <div className="flex items-center gap-3">
-                      <div className="rounded-lg bg-gray-100 p-2">
-                        <BarChart3 className="h-5 w-5 text-gray-600" />
-                      </div>
-                      <div>
-                        <h2 className="text-xl font-bold text-gray-900">Overall Status Summary</h2>
-                        <p className="text-sm text-gray-700">Booking status distribution based on VIN matching and B.T Date & Time</p>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      {statusData.map((status, idx) => {
-                        const getStatusColor = (category) => {
-                          switch (category) {
-                            case 'converted': return { bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-300' }
-                            case 'processing': return { bg: 'bg-orange-100', text: 'text-orange-700', border: 'border-orange-300' }
-                            case 'tomorrow': return { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-300' }
-                            case 'future': return { bg: 'bg-purple-100', text: 'text-purple-700', border: 'border-purple-300' }
-                            default: return { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-300' }
-                          }
-                        }
-                        
-                        const getStatusIcon = (category) => {
-                          switch (category) {
-                            case 'converted': return '✅'
-                            case 'processing': return '⏳'
-                            case 'tomorrow': return '📅'
-                            case 'future': return '🔮'
-                            default: return '❓'
-                          }
-                        }
-                        
-                        const colors = getStatusColor(status.category)
-                        
-                        return (
-                          <div key={idx} className={`p-4 rounded-lg border ${colors.bg} ${colors.border} shadow-sm`}>
-                            <div className="text-center">
-                              <div className="text-2xl mb-2">{getStatusIcon(status.category)}</div>
-                              <p className={`text-2xl font-bold ${colors.text}`}>{status.count}</p>
-                              <p className={`text-sm font-medium ${colors.text}`}>{status.status}</p>
-                              <p className="text-xs text-gray-500 mt-1">
-                                {Math.round((status.count / (vinMatching.totalBookings || 1)) * 100)}% of total
-                              </p>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </CardContent>
-                </Card>
+                      )
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
               </div>
             )
         })()}
@@ -2972,6 +3147,12 @@ export default function SMDashboard() {
                   <p className="text-blue-100 text-sm flex items-center gap-2 mt-0.5">
                     <Gauge className="h-3.5 w-3.5" />
                     {user?.city} • {user?.name}
+                    {isLoading && hasData && (
+                      <span className="ml-2 flex items-center gap-1 text-xs bg-white/20 px-2 py-1 rounded-full">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        Updating
+                      </span>
+                    )}
                   </p>
                 </div>
               </div>
@@ -2982,12 +3163,8 @@ export default function SMDashboard() {
                 </div>
                 <Button
                   onClick={() => {
-                    console.log('🔄 Manual refresh triggered')
-                    fetchedDataTypes.current.clear()
-                    setDashboardData(null)
-                    if (selectedDataType) {
-                      fetchDashboardData(selectedDataType)
-                    }
+                    console.log('🔄 Manual refresh triggered - using global state')
+                    refreshData()
                   }}
                   variant="outline"
                   className="bg-white/10 text-white border-white/30 hover:bg-white/20 shadow-lg hover:shadow-xl transition-all h-10 px-4"

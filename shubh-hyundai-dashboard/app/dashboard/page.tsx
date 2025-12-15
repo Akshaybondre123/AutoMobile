@@ -11,19 +11,38 @@ export default function DashboardPage() {
   const { permissions, isLoading: permissionsLoading, hasPermission } = usePermissions()
 
   useEffect(() => {
-    if (!user) return
+    console.log('🔍 Dashboard routing debug:', {
+      user: user?.email,
+      role: user?.role,
+      authLoading,
+      permissionsLoading,
+      permissionsCount: permissions.length,
+      permissions: permissions.slice(0, 5) // Show first 5 permissions
+    })
+
+    if (!user) {
+      console.log('❌ No user, redirecting to login')
+      return
+    }
     
     // Wait for both auth and permissions to be ready
-    if (authLoading || permissionsLoading) return
+    if (authLoading || permissionsLoading) {
+      console.log('⏳ Still loading...', { authLoading, permissionsLoading })
+      return
+    }
+
+    console.log('✅ Ready to route. User:', user.email, 'Permissions:', permissions.length)
 
     // Check if user has NO permissions assigned (except General Managers only)
     if (permissions.length === 0 && user.role !== "general_manager") {
+      console.log('❌ No permissions and not GM, showing no role message')
       return
     }
 
     // Smart routing using database permissions
     // Check for GM-level permissions OR general_manager role
     if (hasPermission('manage_users') || hasPermission('manage_roles') || hasPermission('target_report') || user.role === "general_manager") {
+      console.log('🎯 Routing to GM dashboard')
       router.push("/dashboard/gm")
       return
     }
@@ -33,25 +52,31 @@ export default function DashboardPage() {
         hasPermission('ro_billing_dashboard') || hasPermission('operations_dashboard') ||
         hasPermission('warranty_dashboard') || hasPermission('warranty_upload') ||
         hasPermission('service_booking_dashboard') || hasPermission('service_booking_upload')) {
+      console.log('🎯 Routing to SM dashboard')
       router.push("/dashboard/sm")
       return
     }
     
     // Basic access - route to SA dashboard
     if (hasPermission('dashboard') || hasPermission('overview')) {
+      console.log('🎯 Routing to SA dashboard')
       router.push("/dashboard/sa")
       return
     }
 
     // Fallback to role-based routing
-    switch (user?.role) {
+    console.log('🎯 Using fallback role-based routing for:', user.role)
+    switch (user?.role as string) {
       case "general_manager":
+        console.log('→ GM dashboard (fallback)')
         router.push("/dashboard/gm")
         break
       case "service_manager":
+        console.log('→ SM dashboard (fallback)')
         router.push("/dashboard/sm")
         break
       default:
+        console.log('→ SA dashboard (fallback)')
         router.push("/dashboard/sa")
         break
     }

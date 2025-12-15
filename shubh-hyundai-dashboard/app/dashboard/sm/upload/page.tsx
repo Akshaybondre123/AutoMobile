@@ -3,13 +3,14 @@
 import { useState } from "react"
 import { useAuth } from "@/lib/auth-context"
 import { usePermissions } from "@/hooks/usePermissions"
+import { useDashboard } from "@/contexts/DashboardContext"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Upload, CheckCircle, AlertCircle, FileText, Loader2 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { getApiUrl } from "@/lib/config"
 
-type UploadType = "ro_billing" | "operations" | "warranty" | "service_booking" | "repair_order_list"
+type UploadType = "ro_billing" | "warranty" | "service_booking" | "repair_order_list"
 
 interface UploadSection {
   type: UploadType
@@ -24,12 +25,6 @@ const uploadSections: UploadSection[] = [
     title: "RO Billing",
     description: "Upload Repair Order billing details with labour and parts cost. Required: R/O No or RO_No",
     color: "blue",
-  },
-  {
-    type: "operations",
-    title: "Operations/Part",
-    description: "Upload operations data with car model counts. Required: OP/Part Code column",
-    color: "green",
   },
   {
     type: "warranty",
@@ -54,24 +49,22 @@ const uploadSections: UploadSection[] = [
 export default function ServiceManagerUploadPage() {
   const { user } = useAuth()
   const { hasPermission } = usePermissions()
+  const { markForRefresh } = useDashboard()
   const router = useRouter()
   const [files, setFiles] = useState<Record<UploadType, File | null>>({
     ro_billing: null,
-    operations: null,
     warranty: null,
     service_booking: null,
     repair_order_list: null,
   })
   const [isLoading, setIsLoading] = useState<Record<UploadType, boolean>>({
     ro_billing: false,
-    operations: false,
     warranty: false,
     service_booking: false,
     repair_order_list: false,
   })
   const [messages, setMessages] = useState<Record<UploadType, { type: "success" | "error"; text: string } | null>>({
     ro_billing: null,
-    operations: null,
     warranty: null,
     service_booking: null,
     repair_order_list: null,
@@ -108,7 +101,6 @@ export default function ServiceManagerUploadPage() {
       // Map upload types to backend file types
       const fileTypeMapping: Record<UploadType, string> = {
         ro_billing: "ro_billing",
-        operations: "operations_part",
         warranty: "warranty", 
         service_booking: "booking_list",
         repair_order_list: "repair_order_list"
@@ -138,6 +130,18 @@ export default function ServiceManagerUploadPage() {
         // Reset file input
         const fileInput = document.getElementById(`file-${type}`) as HTMLInputElement
         if (fileInput) fileInput.value = ""
+        
+        // ✅ Invalidate cache for this data type so dashboard shows new data instantly
+        if (user?.email) {
+          markForRefresh(user.email, type, user.city || 'default')
+          console.log(`🔄 Cache invalidated for ${type} - dashboard will show new data instantly`)
+        }
+        
+        // ✅ Also invalidate average cache since it depends on all data types
+        if (user?.email) {
+          markForRefresh(user.email, 'average', user.city || 'default')
+          console.log('🔄 Average cache invalidated - will recalculate with new data')
+        }
       } else {
         setMessages((prev) => ({
           ...prev,

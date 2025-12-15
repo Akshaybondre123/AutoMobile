@@ -1,5 +1,6 @@
 import BookingListData from '../models/BookingListData.js';
 import RepairOrderListData from '../models/RepairOrderListData.js';
+import UploadedFileMetaDetails from '../models/UploadedFileMetaDetails.js';
 import mongoose from 'mongoose';
 
 /**
@@ -10,13 +11,32 @@ import mongoose from 'mongoose';
 
 /**
  * Get all VINs from RepairOrderList for a specific user/showroom
+ * FIXED: Now properly filters by user's uploaded files only
  */
 export const getRepairOrderVINs = async (uploadedBy, city, showroom_id) => {
   try {
     console.log(`🔍 Getting RepairOrder VINs for: ${uploadedBy}, ${city}`);
     
+    // SECURITY FIX: Get only the current user's uploaded Repair Order files
+    const userRepairOrderFiles = await UploadedFileMetaDetails.find({
+      uploaded_by: uploadedBy,
+      file_type: 'repair_order_list',
+      showroom_id: showroom_id,
+      processing_status: 'completed'
+    }).select('_id').lean();
+    
+    console.log(`🔒 Found ${userRepairOrderFiles.length} repair order files uploaded by ${uploadedBy}`);
+    
+    // If user has no repair order files, return empty set
+    if (userRepairOrderFiles.length === 0) {
+      console.log(`⚠️ No repair order files found for user ${uploadedBy} - VIN matching will show 0 matches`);
+      return new Set();
+    }
+    
+    // Get repair orders only from user's uploaded files
+    const userFileIds = userRepairOrderFiles.map(file => file._id);
     const repairOrders = await RepairOrderListData.find({
-      showroom_id: showroom_id
+      uploaded_file_id: { $in: userFileIds }
     }).select('vin').lean();
     
     const vinSet = new Set();
@@ -26,7 +46,7 @@ export const getRepairOrderVINs = async (uploadedBy, city, showroom_id) => {
       }
     });
     
-    console.log(`📊 Found ${vinSet.size} unique VINs in RepairOrderList`);
+    console.log(`📊 Found ${vinSet.size} unique VINs in user's RepairOrderList (from ${userRepairOrderFiles.length} files)`);
     return vinSet;
   } catch (error) {
     console.error('❌ Error getting RepairOrder VINs:', error);
@@ -36,13 +56,32 @@ export const getRepairOrderVINs = async (uploadedBy, city, showroom_id) => {
 
 /**
  * Get all VINs from BookingList for a specific user/showroom
+ * FIXED: Now properly filters by user's uploaded files only
  */
 export const getBookingListVINs = async (uploadedBy, city, showroom_id) => {
   try {
     console.log(`🔍 Getting BookingList VINs for: ${uploadedBy}, ${city}`);
     
+    // SECURITY FIX: Get only the current user's uploaded Booking List files
+    const userBookingFiles = await UploadedFileMetaDetails.find({
+      uploaded_by: uploadedBy,
+      file_type: 'booking_list',
+      showroom_id: showroom_id,
+      processing_status: 'completed'
+    }).select('_id').lean();
+    
+    console.log(`🔒 Found ${userBookingFiles.length} booking list files uploaded by ${uploadedBy}`);
+    
+    // If user has no booking files, return empty set
+    if (userBookingFiles.length === 0) {
+      console.log(`⚠️ No booking list files found for user ${uploadedBy}`);
+      return new Set();
+    }
+    
+    // Get bookings only from user's uploaded files
+    const userFileIds = userBookingFiles.map(file => file._id);
     const bookings = await BookingListData.find({
-      showroom_id: showroom_id
+      uploaded_file_id: { $in: userFileIds }
     }).select('vin_number').lean();
     
     const vinSet = new Set();
@@ -52,7 +91,7 @@ export const getBookingListVINs = async (uploadedBy, city, showroom_id) => {
       }
     });
     
-    console.log(`📊 Found ${vinSet.size} unique VINs in BookingList`);
+    console.log(`📊 Found ${vinSet.size} unique VINs in user's BookingList (from ${userBookingFiles.length} files)`);
     return vinSet;
   } catch (error) {
     console.error('❌ Error getting BookingList VINs:', error);
@@ -67,51 +106,44 @@ export const performVINMatching = async (uploadedBy, city, showroom_id) => {
   try {
     console.log(`🎯 Starting VIN matching for: ${uploadedBy}, ${city}, showroom: ${showroom_id}`);
     
-    // Get all VINs from RepairOrderList
+    // Get all VINs from RepairOrderList (already filtered by user)
     const repairOrderVINs = await getRepairOrderVINs(uploadedBy, city, showroom_id);
     
-    // Get all BookingList records - UPDATED: Handle both ObjectId and String showroom_id
-    console.log(`🔍 Querying BookingList with showroom_id: ${showroom_id}`);
+    // SECURITY FIX: Get only the current user's uploaded Booking List files
+    const userBookingFiles = await UploadedFileMetaDetails.find({
+      uploaded_by: uploadedBy,
+      file_type: 'booking_list',
+      showroom_id: showroom_id,
+      processing_status: 'completed'
+    }).select('_id').lean();
     
-    let bookings;
-    try {
-      // Try querying with ObjectId first
-      bookings = await BookingListData.find({
-        showroom_id: new mongoose.Types.ObjectId(showroom_id)
-      }).lean();
-      
-      console.log(`📋 Found ${bookings.length} booking records with ObjectId query`);
-      
-      // If no results with ObjectId, try with string
-      if (bookings.length === 0) {
-        console.log(`🔄 Trying string query for showroom_id: ${showroom_id}`);
-        bookings = await BookingListData.find({
-          showroom_id: showroom_id
-        }).lean();
-        console.log(`📋 Found ${bookings.length} booking records with string query`);
-      }
-    } catch (error) {
-      console.log(`❌ ObjectId query failed, trying string query:`, error.message);
-      bookings = await BookingListData.find({
-        showroom_id: showroom_id
-      }).lean();
-      console.log(`📋 Found ${bookings.length} booking records with string fallback`);
+    console.log(`🔒 Found ${userBookingFiles.length} booking list files uploaded by ${uploadedBy}`);
+    
+    // If user has no booking files, return empty result
+    if (userBookingFiles.length === 0) {
+      console.log(`⚠️ No booking list files found for user ${uploadedBy}`);
+      return {
+        bookings: [],
+        statusSummary: {},
+        totalBookings: 0,
+        matchedVINs: 0,
+        unmatchedVINs: 0,
+        serviceAdvisorBreakdown: [],
+        traditionalServiceAdvisorBreakdown: []
+      };
     }
     
-    console.log(`📋 Found ${bookings.length} booking records in database`);
+    // Get bookings only from user's uploaded files
+    const userFileIds = userBookingFiles.map(file => file._id);
+    const bookings = await BookingListData.find({
+      uploaded_file_id: { $in: userFileIds }
+    }).lean();
     
-    // If no bookings found, log some debug info
+    console.log(`📋 Found ${bookings.length} booking records from user's uploaded files`);
+    
+    // If no bookings found from user's files, return empty result
     if (bookings.length === 0) {
-      console.log(`❌ No BookingList records found for showroom_id: ${showroom_id}`);
-      
-      // Check if there are any BookingList records at all
-      const totalBookings = await BookingListData.countDocuments();
-      console.log(`📊 Total BookingList records in database: ${totalBookings}`);
-      
-      // Check what showroom_ids exist
-      const existingShowrooms = await BookingListData.distinct('showroom_id');
-      console.log(`🏢 Existing showroom_ids in BookingList:`, existingShowrooms);
-      
+      console.log(`⚠️ No BookingList records found for user ${uploadedBy}`);
       return {
         bookings: [],
         statusSummary: {},
@@ -192,7 +224,13 @@ export const performVINMatching = async (uploadedBy, city, showroom_id) => {
       return acc;
     }, {});
     
-    console.log(`✅ VIN matching completed. Status summary:`, Object.keys(statusSummary).map(key => `${key}: ${statusSummary[key].count}`));
+    const matchedCount = enhancedBookings.filter(b => b.vin_matched).length;
+    const unmatchedCount = enhancedBookings.filter(b => !b.vin_matched).length;
+    
+    console.log(`✅ VIN matching completed for user ${uploadedBy}: ${enhancedBookings.length} bookings processed`);
+    console.log(`📊 Matched VINs: ${matchedCount}, Unmatched VINs: ${unmatchedCount}`);
+    console.log(`🔒 Data isolation: Only user's own booking and repair order data used`);
+    console.log(`📈 Status breakdown:`, Object.keys(statusSummary).map(key => `${key}: ${statusSummary[key].count}`).join(', '));
     
     // Create Service Advisor breakdown with work types and status
     const serviceAdvisorBreakdown = enhancedBookings.reduce((acc, booking) => {

@@ -3,6 +3,8 @@
 import type React from "react"
 
 import { AuthProvider, useAuth } from "@/lib/auth-context"
+import { DashboardProvider } from "@/contexts/DashboardContext"
+import { GlobalApiProvider } from "@/contexts/GlobalApiContext"
 import { Sidebar } from "@/components/sidebar"
 import { useRouter } from "next/navigation"
 import { useEffect } from "react"
@@ -43,7 +45,11 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
     <AuthProvider>
-      <DashboardLayoutContent>{children}</DashboardLayoutContent>
+      <GlobalApiProvider>
+        <DashboardProvider>
+          <DashboardLayoutContent>{children}</DashboardLayoutContent>
+        </DashboardProvider>
+      </GlobalApiProvider>
     </AuthProvider>
   )
 }

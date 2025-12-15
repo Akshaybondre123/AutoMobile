@@ -56,33 +56,11 @@ export const getNewDashboardData = async (req, res) => {
       .limit(10);
     console.log(`📊 Found ${uploads.length} uploads for exact email match`);
 
-    // If no uploads found for exact email, try role-based matching
+    // ✅ STRICT DATA ISOLATION: Only show data uploaded by the exact user
+    // No fallback to other users' data to prevent data leakage between service managers
     if (uploads.length === 0) {
-      console.log(`⚠️ No uploads found for email "${uploadedBy}", trying role-based matching...`);
-      
-      // For service managers, try to find uploads from any SM email
-      if (uploadedBy && (uploadedBy.includes('sm.') || uploadedBy.includes('service'))) {
-        const smQuery = { 
-          ...fileQuery,
-          uploaded_by: { $regex: /sm\.|service/i }
-        };
-        uploads = await UploadedFileMetaDetails.find(smQuery)
-          .sort({ uploaded_at: -1 })
-          .limit(10);
-        console.log(`📊 Found ${uploads.length} uploads for SM role-based match`);
-      }
-      
-      // If still no uploads, get all uploads for the file type
-      if (uploads.length === 0) {
-        uploads = await UploadedFileMetaDetails.find(fileQuery)
-          .sort({ uploaded_at: -1 })
-          .limit(10);
-        console.log(`📊 Using fallback query, found ${uploads.length} uploads`);
-        
-        // Debug: Show available uploaded_by values
-        const allUploads = await UploadedFileMetaDetails.find({}).select('uploaded_by file_type').limit(5);
-        console.log(`📋 Available uploaded_by values:`, allUploads.map(u => u.uploaded_by));
-      }
+      console.log(`⚠️ No uploads found for email "${uploadedBy}" - maintaining strict data isolation`);
+      console.log(`🔒 Data isolation enforced: Each service manager can only see their own uploaded data`);
     }
 
     // Get data based on type
