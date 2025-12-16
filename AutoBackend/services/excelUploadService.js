@@ -234,10 +234,11 @@ class ExcelUploadService {
 
     console.log(`🚀 Processing ${uploadCase} for ${config.name}`);
 
-    // Repair Order List uploads can be large and sometimes hit transaction limits.
+    // Repair Order List and Booking List uploads can be large and sometimes hit transaction limits.
     // To improve reliability, we avoid wrapping them in a MongoDB transaction and
     // let individual upserts succeed independently.
-    const useTransaction = fileMetadata.file_type !== 'repair_order_list';
+    const transactionalFileTypes = ['repair_order_list', 'booking_list'];
+    const useTransaction = !transactionalFileTypes.includes(fileMetadata.file_type);
     let session = null;
 
     if (useTransaction) {
@@ -343,17 +344,17 @@ class ExcelUploadService {
       }
       
       try {
+        const updateOptions = session
+          ? { upsert: true, new: true, session }
+          : { upsert: true, new: true }
+
         const result = await model.findOneAndUpdate(
           queryCondition,
           {
             $set: documentData,
             $setOnInsert: { created_at: new Date() }
           },
-          {
-            upsert: true,
-            new: true,
-            session: session
-          }
+          updateOptions
         );
         
         // Check if it was an insert or update
@@ -429,13 +430,15 @@ class ExcelUploadService {
         delete updateData[uniqueKey];
       }
       
+      const updateOptions = session ? { session } : undefined;
+
       const result = await model.updateOne(
         {
           ...queryCondition,
           showroom_id: fileMetadata.showroom_id
         },
         { $set: updateData },
-        { session }
+        updateOptions
       );
       
       if (result.modifiedCount > 0) {
@@ -556,7 +559,8 @@ class ExcelUploadService {
         updated_at: new Date()
       }));
 
-      const result = await model.insertMany(documentsToInsert, { session });
+      const insertOptions = session ? { session } : undefined;
+      const result = await model.insertMany(documentsToInsert, insertOptions);
       insertedCount = result.length;
       console.log(`✅ Inserted ${insertedCount} new records with uploaded_file_id: ${fileMetadata._id}`);
     }
