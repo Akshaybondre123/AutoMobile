@@ -1169,49 +1169,37 @@ export default function SMDashboard() {
     setWorkTypeDataFetched(false)
   }, [user?.email])
 
-  // Fetch work type data for Average dashboard - only once when component mounts
+  // Build work type insights for the Average dashboard from existing data
   useEffect(() => {
-    const fetchWorkTypeData = async () => {
-      if (!user?.email || !user?.city || !hasSMAccess) return
-      
-      try {
-        const apiUrl = getApiUrl(`/api/service-manager/dashboard-data?uploadedBy=${user.email}&city=${user.city}&dataType=average`)
-        const response = await fetch(apiUrl)
-        
-        if (response.ok) {
-          const result = await response.json()
-          const bookingData = Array.isArray(result.data) ? result.data : []
-          
-          // Count work types from actual data
-          const workTypeCounts = bookingData.reduce((acc: any, record: any) => {
-            const workType = record.workType || 'Unknown'
-            acc[workType] = (acc[workType] || 0) + 1
-            return acc
-          }, {})
-
-          setWorkTypeData([
-            { name: 'Paid Service', value: workTypeCounts['Paid Service'] || 0, color: '#0ea5e9', description: 'Regular paid services' },
-            { name: 'Free Service', value: workTypeCounts['Free Service'] || 0, color: '#10b981', description: 'Complimentary services' },
-            { name: 'Running Repair', value: workTypeCounts['Running Repair'] || 0, color: '#f59e0b', description: 'Ongoing repairs' },
-          ])
-        }
-      } catch (error) {
-        console.error('Error loading work type data')
-        // Set default work type data on error
-        setWorkTypeData([
-          { name: 'Paid Service', value: 0, color: '#3b82f6', description: 'Regular paid services' },
-          { name: 'Free Service', value: 0, color: '#10b981', description: 'Complimentary services' },
-          { name: 'Running Repair', value: 0, color: '#f59e0b', description: 'Ongoing repairs' },
-        ])
-      }
+    if (!hasSMAccess || selectedDataType !== "average") {
+      return
     }
 
-    // Only fetch once when user data is available
-    if (user?.email && user?.city && !workTypeDataFetched && hasSMAccess) {
-      fetchWorkTypeData()
+    const records = Array.isArray(dashboardData?.data) ? dashboardData?.data : null
+
+    if (records && records.length > 0) {
+      const workTypeCounts = records.reduce((acc: Record<string, number>, record: any) => {
+        const workType = record.workType || record.work_type || 'Unknown'
+        acc[workType] = (acc[workType] || 0) + 1
+        return acc
+      }, {})
+
+      setWorkTypeData([
+        { name: 'Paid Service', value: workTypeCounts['Paid Service'] || 0, color: '#0ea5e9', description: 'Regular paid services' },
+        { name: 'Free Service', value: workTypeCounts['Free Service'] || 0, color: '#10b981', description: 'Complimentary services' },
+        { name: 'Running Repair', value: workTypeCounts['Running Repair'] || 0, color: '#f59e0b', description: 'Ongoing repairs' },
+      ])
       setWorkTypeDataFetched(true)
+    } else if (!isLoading && workTypeDataFetched) {
+      // No data available, reset to defaults
+      setWorkTypeData([
+        { name: 'Paid Service', value: 0, color: '#3b82f6', description: 'Regular paid services' },
+        { name: 'Free Service', value: 0, color: '#10b981', description: 'Complimentary services' },
+        { name: 'Running Repair', value: 0, color: '#f59e0b', description: 'Ongoing repairs' },
+      ])
+      setWorkTypeDataFetched(false)
     }
-  }, [user?.email, user?.city, workTypeDataFetched, hasSMAccess, hasPermission])
+  }, [dashboardData?.data, hasSMAccess, isLoading, selectedDataType, workTypeDataFetched])
 
   // Set default to latest date for RO Billing
   useEffect(() => {
