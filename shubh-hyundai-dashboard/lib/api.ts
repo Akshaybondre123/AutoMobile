@@ -1,3 +1,5 @@
+import { API_BASE_URL } from "./config"
+
 // Fake API for dummy data
 export interface ServiceRecord {
   id: string
@@ -297,7 +299,7 @@ export async function uploadServiceData(
     formData.append('org_id', orgId)
     formData.append('showroom_id', showroomId)
 
-    const response = await fetch('http://localhost:5000/api/excel/upload', {
+    const response = await fetch(`${API_BASE_URL}/api/excel/upload`, {
       method: 'POST',
       body: formData,
     })
@@ -849,7 +851,7 @@ export interface UploadStats {
 
 export async function getUploadHistory(showroomId: string, fileType?: string): Promise<UploadHistory[]> {
   try {
-    const url = new URL(`http://localhost:5000/api/excel/history/${showroomId}`)
+    const url = new URL(`${API_BASE_URL}/api/excel/history/${showroomId}`)
     if (fileType) {
       url.searchParams.append('fileType', fileType)
     }
@@ -871,7 +873,7 @@ export async function getUploadHistory(showroomId: string, fileType?: string): P
 
 export async function getUploadStats(showroomId: string, fileType?: string): Promise<UploadStats[]> {
   try {
-    const url = new URL(`http://localhost:5000/api/excel/stats/${showroomId}`)
+    const url = new URL(`${API_BASE_URL}/api/excel/stats/${showroomId}`)
     if (fileType) {
       url.searchParams.append('fileType', fileType)
     }

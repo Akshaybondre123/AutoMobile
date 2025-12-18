@@ -1,3 +1,9 @@
+import { dirname } from 'path'
+import { fileURLToPath } from 'url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   typescript: {
@@ -8,7 +14,7 @@ const nextConfig = {
   },
   // Fix HMR issues - Use turbopack config instead of webpack for Next.js 16
   turbopack: {
-    // Empty config to silence the warning
+    root: __dirname,
   },
   // Add CORS headers for API requests
   async headers() {

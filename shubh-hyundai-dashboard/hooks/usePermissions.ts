@@ -331,6 +331,11 @@ export function usePermissions() {
           "dashboard",
           "overview"
         ]
+      case "body_shop_manager":
+        return [
+          "dashboard",
+          "overview"
+        ]
       default:
         return []
     }

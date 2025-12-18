@@ -116,9 +116,9 @@ export default function ServiceManagerUploadPage() {
       formData.append("file_type", fileTypeMapping[type])
 
       // Use different API endpoints based on type
-      let apiEndpoint = "http://localhost:5000/api/excel/upload"
+      let apiEndpoint = getApiUrl("/api/excel/upload")
       if (type === "repair_order_list") {
-        apiEndpoint = "http://localhost:5000/api/service-manager/repair-order-list/upload"
+        apiEndpoint = getApiUrl("/api/service-manager/repair-order-list/upload")
       }
 
       const response = await fetch(apiEndpoint, {

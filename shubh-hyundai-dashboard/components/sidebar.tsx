@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation"
 import { useAuth } from "@/lib/auth-context"
 import { usePermissions } from "@/hooks/usePermissions"
 import { Button } from "@/components/ui/button"
-import { BarChart3, Upload, Target, LogOut, Menu, X, Settings, LayoutDashboard } from "lucide-react"
+import { BarChart3, Upload, Target, LogOut, Menu, X, Settings, LayoutDashboard, Wrench, PlusSquare } from "lucide-react"
 import { useState } from "react"
 
 export function Sidebar() {
@@ -19,14 +19,28 @@ export function Sidebar() {
   const isGM = user.role === "general_manager"
   const isSM = user.role === "service_manager"
   const isSA = user.role === "service_advisor"
+  const isBDM = user.role === "body_shop_manager"
 
   const navItems = [
     // Main Dashboards - Always show based on role
     {
       label: "Dashboard",
-      href: isGM ? "/dashboard/gm" : isSM ? "/dashboard/sm" : "/dashboard/sa",
+      href: isGM ? "/dashboard/gm" : isSM ? "/dashboard/sm" : isBDM ? "/dashboard/bdm" : "/dashboard/sa",
       icon: BarChart3,
       show: true, // Everyone can see their respective dashboard
+    },
+    // Service Advisor specific tools
+    {
+      label: "Services Dashboard",
+      href: "/dashboard/sa/services",
+      icon: Wrench,
+      show: isSA,
+    },
+    {
+      label: "Create Service",
+      href: "/dashboard/sa/create-service",
+      icon: PlusSquare,
+      show: isSA,
     },
     
     // GM Module Pages - GM sees all, others need permission
