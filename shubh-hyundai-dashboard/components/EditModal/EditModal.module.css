@@ -1,0 +1,567 @@
+/* Edit Modal Styles - Modern Flat Design */
+.edit-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.6);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  padding: 20px;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.edit-modal-content {
+  background: #ffffff;
+  border-radius: 12px;
+  border: 2px solid #e5e7eb;
+  width: 100%;
+  max-width: 560px;
+  max-height: 90vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: slideUp 0.3s ease;
+  position: relative;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.edit-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
+  border-bottom: 2px solid #e5e7eb;
+  flex-shrink: 0;
+}
+
+.edit-modal-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0;
+  letter-spacing: -0.3px;
+}
+
+.edit-close-button {
+  background: #ffffff;
+  border: 2px solid #e5e7eb;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 8px;
+  color: #6b7280;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+}
+
+.edit-close-button:hover {
+  background-color: #ef4444;
+  border-color: #ef4444;
+  color: #ffffff;
+  transform: rotate(90deg);
+}
+
+.edit-close-button:active {
+  transform: rotate(90deg) scale(0.95);
+}
+
+/* Ensure form takes full height and footer stays at bottom */
+.edit-modal-content form {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.edit-modal-body {
+  padding: 24px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.edit-modal-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.edit-modal-body::-webkit-scrollbar-track {
+  background: #f3f4f6;
+  border-radius: 4px;
+}
+
+.edit-modal-body::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 4px;
+}
+
+.edit-modal-body::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+.edit-modal-info {
+  background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+  padding: 16px;
+  border-radius: 10px;
+  margin-bottom: 24px;
+  border: 2px solid #93c5fd;
+  font-size: 14px;
+  color: #1e40af;
+  font-weight: 600;
+}
+
+.edit-modal-info strong {
+  color: #1e3a8a;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.edit-form-group {
+  margin-bottom: 20px;
+}
+
+.edit-form-group:last-child {
+  margin-bottom: 0;
+}
+
+.edit-modal-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  color: #374151;
+  margin-bottom: 8px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.edit-modal-label .required-star {
+  color: #ef4444;
+  font-weight: 700;
+}
+
+.edit-label-icon {
+  color: #6b7280;
+  stroke-width: 2.5;
+}
+
+.edit-modal-input,
+.edit-modal-select {
+  width: 100%;
+  padding: 12px 16px;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s;
+  background-color: #ffffff;
+  color: #111827;
+  font-family: inherit;
+}
+
+.edit-modal-input:hover,
+.edit-modal-select:hover {
+  border-color: #d1d5db;
+}
+
+.edit-modal-input:focus,
+.edit-modal-select:focus {
+  outline: none;
+  border-color: #3b82f6;
+  background-color: #f9fafb;
+}
+
+.edit-modal-input:disabled {
+  background-color: #f3f4f6;
+  cursor: not-allowed;
+  color: #9ca3af;
+  border-color: #e5e7eb;
+}
+
+.edit-modal-input::placeholder {
+  color: #9ca3af;
+  font-weight: 400;
+}
+
+.edit-modal-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 40px;
+  cursor: pointer;
+}
+
+.edit-modal-select:focus {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%233b82f6' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+}
+
+.edit-modal-select option {
+  padding: 8px;
+  font-weight: 500;
+}
+
+.edit-modal-input:valid:not(:placeholder-shown) {
+  border-color: #10b981;
+}
+
+.edit-modal-input:invalid:not(:placeholder-shown):not(:focus) {
+  border-color: #ef4444;
+}
+
+.edit-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 20px 24px;
+  background-color: #fafafa;
+  border-top: 2px solid #e5e7eb;
+  flex-shrink: 0;
+}
+
+.edit-cancel-button,
+.edit-save-button {
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 2px solid;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  min-width: 120px;
+}
+
+.edit-cancel-button {
+  background-color: #ffffff;
+  color: #6b7280;
+  border-color: #e5e7eb;
+}
+
+.edit-cancel-button:hover {
+  background-color: #f3f4f6;
+  border-color: #d1d5db;
+  color: #374151;
+  transform: translateY(-1px);
+}
+
+.edit-cancel-button:active {
+  transform: translateY(0);
+}
+
+.edit-save-button {
+  background-color: #3b82f6;
+  color: #ffffff;
+  border-color: #3b82f6;
+}
+
+.edit-save-button:hover {
+  background-color: #2563eb;
+  border-color: #2563eb;
+  transform: translateY(-2px);
+}
+
+.edit-save-button:active {
+  transform: translateY(0);
+}
+
+.edit-save-button:disabled {
+  background-color: #d1d5db;
+  border-color: #d1d5db;
+  cursor: not-allowed;
+  transform: none;
+  opacity: 0.6;
+}
+
+.edit-save-button.loading {
+  position: relative;
+  color: transparent;
+  pointer-events: none;
+}
+
+.edit-save-button.loading::after {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  top: 50%;
+  left: 50%;
+  margin-left: -8px;
+  margin-top: -8px;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  border-top-color: transparent;
+  animation: spinner 0.6s linear infinite;
+}
+
+@keyframes spinner {
+  to { transform: rotate(360deg); }
+}
+
+.edit-error-message {
+  color: #ef4444;
+  font-size: 12px;
+  margin-top: 6px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.edit-success-message {
+  color: #10b981;
+  font-size: 12px;
+  margin-top: 6px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Responsive Styles */
+@media (max-width: 640px) {
+  .edit-modal-overlay {
+    padding: 12px;
+  }
+  
+  .edit-modal-content {
+    max-height: 95vh;
+    border-radius: 10px;
+  }
+  
+  .edit-modal-content form {
+    height: 100%;
+  }
+  
+  .edit-modal-header {
+    padding: 16px 18px;
+  }
+  
+  .edit-modal-title {
+    font-size: 18px;
+  }
+
+  .edit-close-button {
+    width: 34px;
+    height: 34px;
+  }
+  
+  .edit-modal-body {
+    padding: 18px;
+  }
+  
+  .edit-modal-info {
+    padding: 14px;
+    font-size: 13px;
+  }
+  
+  .edit-form-group {
+    margin-bottom: 18px;
+  }
+
+  .edit-modal-label {
+    font-size: 12px;
+  }
+  
+  .edit-modal-input,
+  .edit-modal-select {
+    padding: 11px 14px;
+    font-size: 13px;
+  }
+  
+  .edit-modal-footer {
+    padding: 16px 18px;
+    flex-direction: column-reverse;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  
+  .edit-cancel-button,
+  .edit-save-button {
+    width: 100%;
+    min-width: auto;
+    padding: 12px 20px;
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 480px) {
+  .edit-modal-overlay {
+    padding: 8px;
+  }
+
+  .edit-modal-content {
+    border-radius: 8px;
+  }
+  
+  .edit-modal-header {
+    padding: 14px 16px;
+  }
+  
+  .edit-modal-title {
+    font-size: 16px;
+  }
+  
+  .edit-modal-body {
+    padding: 16px;
+  }
+
+  .edit-modal-info {
+    padding: 12px;
+    font-size: 12px;
+  }
+  
+  .edit-form-group {
+    margin-bottom: 16px;
+  }
+
+  .edit-modal-input,
+  .edit-modal-select {
+    padding: 10px 12px;
+  }
+}
+
+/* Accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .edit-modal-overlay,
+  .edit-modal-content,
+  .edit-close-button,
+  .edit-cancel-button,
+  .edit-save-button,
+  .edit-modal-input,
+  .edit-modal-select {
+    animation: none;
+    transition: none;
+  }
+
+  .edit-close-button:hover,
+  .edit-cancel-button:hover,
+  .edit-save-button:hover {
+    transform: none;
+  }
+}
+
+@media (prefers-contrast: high) {
+  .edit-modal-content,
+  .edit-modal-input,
+  .edit-modal-select,
+  .edit-close-button,
+  .edit-cancel-button {
+    border-width: 3px;
+  }
+}
+
+.edit-close-button:focus-visible,
+.edit-modal-input:focus-visible,
+.edit-modal-select:focus-visible,
+.edit-cancel-button:focus-visible,
+.edit-save-button:focus-visible {
+  outline: 3px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+@media print {
+  .edit-modal-overlay {
+    display: none;
+  }
+}
+
+/* Dark Mode Support */
+@media (prefers-color-scheme: dark) {
+  .edit-modal-content {
+    background: #1f2937;
+    border-color: #374151;
+  }
+
+  .edit-modal-header {
+    background: linear-gradient(135deg, #111827 0%, #1f2937 100%);
+    border-color: #374151;
+  }
+
+  .edit-modal-title {
+    color: #f3f4f6;
+  }
+
+  .edit-close-button {
+    background: #1f2937;
+    border-color: #374151;
+    color: #9ca3af;
+  }
+
+  .edit-modal-body {
+    background: #111827;
+  }
+
+  .edit-modal-info {
+    background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%);
+    border-color: #3b82f6;
+    color: #bfdbfe;
+  }
+
+  .edit-modal-info strong {
+    color: #dbeafe;
+  }
+
+  .edit-modal-label {
+    color: #d1d5db;
+  }
+
+  .edit-modal-input,
+  .edit-modal-select {
+    background-color: #1f2937;
+    border-color: #374151;
+    color: #f3f4f6;
+  }
+
+  .edit-modal-input:focus,
+  .edit-modal-select:focus {
+    background-color: #111827;
+    border-color: #3b82f6;
+  }
+
+  .edit-modal-input::placeholder {
+    color: #6b7280;
+  }
+
+  .edit-modal-footer {
+    background-color: #111827;
+    border-color: #374151;
+  }
+
+  .edit-cancel-button {
+    background-color: #1f2937;
+    border-color: #374151;
+    color: #9ca3af;
+  }
+
+  .edit-cancel-button:hover {
+    background-color: #374151;
+    border-color: #4b5563;
+    color: #d1d5db;
+  }
+}

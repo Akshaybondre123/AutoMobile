@@ -36,6 +36,11 @@ export default function DashboardPage() {
       router.push("/dashboard/sm")
       return
     }
+
+    if (user.role === "body_shop_manager") {
+      router.push("/dashboard/bdm")
+      return
+    }
     
     // Basic access - route to SA dashboard
     if (hasPermission('dashboard') || hasPermission('overview')) {
@@ -45,9 +50,6 @@ export default function DashboardPage() {
 
     // Fallback to role-based routing
     switch (user?.role) {
-      case "general_manager":
-        router.push("/dashboard/gm")
-        break
       case "service_manager":
         router.push("/dashboard/sm")
         break

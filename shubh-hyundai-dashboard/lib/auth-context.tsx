@@ -3,7 +3,7 @@
 import type React from "react"
 import { createContext, useContext, useState, useEffect } from "react"
 
-export type UserRole = "general_manager" | "service_manager" | "service_advisor"
+export type UserRole = "general_manager" | "service_manager" | "service_advisor" | "body_shop_manager"
 
 export interface User {
   id: string
@@ -41,13 +41,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       // Optimized: Check cache first to avoid redundant lookups
       const cachedUser = localStorage.getItem("user")
+      let parsedCachedUser: User | null = null
       if (cachedUser) {
-        const parsedUser = JSON.parse(cachedUser)
-        if (parsedUser.email === email) {
-          setUser(parsedUser)
-          setIsLoading(false)
-          return // User already cached, skip authentication
-        }
+        parsedCachedUser = JSON.parse(cachedUser)
       }
 
       // Fake authentication - in production, call your API
@@ -79,6 +75,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           role: "service_manager",
           city: "Nagpur",
         },
+        "bdm.pune@shub.com": {
+          id: "7",
+          name: "Body Shop Manager",
+          email: "bdm.pune@shub.com",
+          role: "body_shop_manager",
+          city: "Pune",
+        },
+        "bdm.mumbai@shub.com": {
+          id: "8",
+          name: "Body Shop Manager",
+          email: "bdm.mumbai@shub.com",
+          role: "body_shop_manager",
+          city: "Mumbai",
+        },
         "sa.pune@shubh.com": {
           id: "5",
           name: "Deepak Patel",
@@ -95,8 +105,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         },
       }
 
+      const mockPasswords: Record<string, string> = {
+        "gm@shubh.com": "password",
+        "sm.pune@shubh.com": "password",
+        "sm.mumbai@shubh.com": "password",
+        "sm.nagpur@shubh.com": "password",
+        "sa.pune@shubh.com": "password",
+        "sa.mumbai@shubh.com": "password",
+        "bdm.pune@shub.com": "bodyshop",
+        "bdm.mumbai@shub.com": "bodyshopmumbai",
+      }
+
+      if (parsedCachedUser?.email === email) {
+        const refreshedUser = mockUsers[email] || parsedCachedUser
+        setUser(refreshedUser)
+        localStorage.setItem("user", JSON.stringify(refreshedUser))
+        return // User already cached, refresh from mockUsers and skip authentication
+      }
+
       const foundUser = mockUsers[email]
-      if (foundUser && password === "password") {
+      const expectedPassword = mockPasswords[email]
+      if (foundUser && expectedPassword && password === expectedPassword) {
         setUser(foundUser)
         localStorage.setItem("user", JSON.stringify(foundUser))
       } else {
@@ -148,6 +177,22 @@ export const getAllDemoUsers = (): User[] => {
       email: "sm.nagpur@shubh.com",
       role: "service_manager",
       city: "Nagpur",
+      org_id: "shubh_hyundai"
+    },
+    {
+      id: "7",
+      name: "Body Shop Manager",
+      email: "bdm.pune@shub.com",
+      role: "body_shop_manager",
+      city: "Pune",
+      org_id: "shubh_hyundai"
+    },
+    {
+      id: "8",
+      name: "Body Shop Manager",
+      email: "bdm.mumbai@shub.com",
+      role: "body_shop_manager",
+      city: "Mumbai",
       org_id: "shubh_hyundai"
     },
     {

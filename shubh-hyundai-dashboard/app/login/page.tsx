@@ -30,6 +30,8 @@ export default function LoginPage() {
         router.push("/dashboard/gm")
       } else if (email.startsWith("sm.")) {
         router.push("/dashboard/sm")
+      } else if (email.startsWith("bdm.")) {
+        router.push("/dashboard/bdm")
       } else if (email.startsWith("sa.")) {
         router.push("/dashboard/sa")
       } else {
@@ -43,12 +45,14 @@ export default function LoginPage() {
   }
 
   const demoAccounts = [
-    { email: "gm@shubh.com", role: "General Manager", city: "All Cities" },
-    { email: "sm.pune@shubh.com", role: "Service Manager", city: "Pune" },
-    { email: "sm.mumbai@shubh.com", role: "Service Manager", city: "Mumbai" },
-    { email: "sm.nagpur@shubh.com", role: "Service Manager", city: "Nagpur" },
-    { email: "sa.pune@shubh.com", role: "Service Advisor", city: "Pune" },
-    { email: "sa.mumbai@shubh.com", role: "Service Advisor", city: "Mumbai" },
+    { email: "gm@shubh.com", role: "General Manager", city: "All Cities", password: "password" },
+    { email: "sm.pune@shubh.com", role: "Service Manager", city: "Pune", password: "password" },
+    { email: "sm.mumbai@shubh.com", role: "Service Manager", city: "Mumbai", password: "password" },
+    { email: "sm.nagpur@shubh.com", role: "Service Manager", city: "Nagpur", password: "password" },
+    { email: "bdm.pune@shub.com", role: "Body Shop Manager", city: "Pune", password: "bodyshop" },
+    { email: "bdm.mumbai@shub.com", role: "Body Shop Manager", city: "Mumbai", password: "bodyshopmumbai" },
+    { email: "sa.pune@shubh.com", role: "Service Advisor", city: "Pune", password: "password" },
+    { email: "sa.mumbai@shubh.com", role: "Service Advisor", city: "Mumbai", password: "password" },
   ]
 
   return (
@@ -99,19 +103,22 @@ export default function LoginPage() {
             </form>
 
             <div className="border-t pt-6">
-              <p className="text-sm font-medium mb-3">Demo Accounts (Password: password)</p>
+              <p className="text-sm font-medium mb-3">Demo Accounts</p>
               <div className="space-y-2">
                 {demoAccounts.map((account) => (
                   <button
                     key={account.email}
                     onClick={() => {
                       setEmail(account.email)
-                      setPassword("password")
+                      setPassword(account.password)
                     }}
                     className="w-full text-left p-3 rounded-lg border border-border hover:bg-secondary transition-colors"
                   >
                     <p className="text-sm font-medium">{account.role}</p>
                     <p className="text-xs text-muted-foreground">{account.email}</p>
+                    {account.password !== "password" && (
+                      <p className="text-xs text-muted-foreground">Password: {account.password}</p>
+                    )}
                     <p className="text-xs text-accent">{account.city}</p>
                   </button>
                 ))}
