@@ -45,6 +45,18 @@ export default function LoginPage() {
     }
   }
 
+  // const demoAccounts = [];
+  const demoAccounts = [
+    { email: "pratham.agrawal@shubhhyundai.com", role: "Owner", city: "All Cities", password: "Welcome123!" },
+    { email: "smservice.ptn@shubhhyundai.com", role: "Service Manager", city: "Pkjhjatan", password: "Welcome123!" },
+    { email: "sm.mumbai@shubh.com", role: "Service Manager", city: "Mumbai", password: "password" },
+    { email: "sm.nagpur@shubh.com", role: "Service Manager", city: "Nagpur", password: "password" },
+    { email: "bdm.pune@shub.com", role: "Body Shop Manager", city: "Pune", password: "bodyshop" },
+    { email: "bdm.mumbai@shub.com", role: "Body Shop Manager", city: "Mumbai", password: "bodyshopmumbai" },
+    { email: "sa.pune@shubh.com", role: "Service Advisor", city: "Pune", password: "password" },
+    { email: "sa.mumbai@shubh.com", role: "Service Advisor", city: "Mumbai", password: "password" },
+  ]
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/10 to-accent/10 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
@@ -91,6 +103,29 @@ export default function LoginPage() {
                 {isLoading ? "Logging in..." : "Login"}
               </Button>
             </form>
+
+            <div className="border-t pt-6">
+              <p className="text-sm font-medium mb-3">Demo Accounts</p>
+              <div className="space-y-2">
+                {demoAccounts.map((account) => (
+                  <button
+                    key={account.email}
+                    onClick={() => {
+                      setEmail(account.email)
+                      setPassword(account.password)
+                    }}
+                    className="w-full text-left p-3 rounded-lg border border-border hover:bg-secondary transition-colors"
+                  >
+                    <p className="text-sm font-medium">{account.role}</p>
+                    <p className="text-xs text-muted-foreground">{account.email}</p>
+                    {account.password !== "password" && (
+                      <p className="text-xs text-muted-foreground">Password: {account.password}</p>
+                    )}
+                    <p className="text-xs text-accent">{account.city}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>

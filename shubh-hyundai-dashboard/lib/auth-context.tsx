@@ -5,7 +5,7 @@ import { getApiUrl } from "./config"
 import { useAppSelector, useAppDispatch } from "@/lib/store/hooks"
 import { setUser, login as loginAction, logout as logoutAction, User } from "@/lib/store/slices/authSlice"
 
-export type UserRole = "owner" | "service_manager" | "service_advisor" | "gm_service"
+export type UserRole = "owner" | "general_manager" | "service_manager" | "service_advisor" | "body_shop_manager" | "gm_service"
 
 // Re-export User type from slice
 export type { User }
@@ -57,7 +57,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   userData.city = "Pune" // Default city
                 }
               }
-              dispatch(setUser(userData))
+              // Ensure showroom_id and showroom_city are included if present
+              const userToSet = {
+                ...userData,
+                showroom_id: userData.showroom_id,
+                showroom_city: userData.showroom_city
+              }
+              dispatch(setUser(userToSet))
             }
           } else {
             // token invalid - clear
@@ -123,7 +129,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email: userEmail,
         role: backendUser.role || 'service_manager', // Default role if not provided
         city: backendUser.city,
-        org_id: backendUser.org_id
+        org_id: backendUser.org_id,
+        showroom_id: backendUser.showroom_id,
+        showroom_city: backendUser.showroom_city
       }
       
       // Extract city from email if not present (e.g., sm.pune@shubh.com -> Pune)
@@ -200,6 +208,22 @@ export const getAllDemoUsers = (): User[] => {
       email: "sm.nagpur@shubh.com",
       role: "service_manager",
       city: "Nagpur",
+      org_id: "shubh_hyundai"
+    },
+    {
+      id: "7",
+      name: "Body Shop Manager",
+      email: "bdm.pune@shub.com",
+      role: "body_shop_manager",
+      city: "Pune",
+      org_id: "shubh_hyundai"
+    },
+    {
+      id: "8",
+      name: "Body Shop Manager",
+      email: "bdm.mumbai@shub.com",
+      role: "body_shop_manager",
+      city: "Mumbai",
       org_id: "shubh_hyundai"
     },
     {

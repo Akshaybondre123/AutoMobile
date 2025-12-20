@@ -1,6 +1,9 @@
 // API Configuration
 // Prefer explicit env var; fall back to deployed backend in production and localhost in dev.
 
+// Axios instance for car service APIs (from incoming branch)
+import axios, { AxiosInstance, InternalAxiosRequestConfig, AxiosResponse, AxiosError } from "axios"
+
 const DEPLOYED_BACKEND_URL = "https://auto-mobile-mblq.vercel.app"
 const LOCAL_BACKEND_URL = "http://localhost:5000"
 
@@ -109,3 +112,85 @@ export const API_BASE_URL = (() => {
   
   return LOCAL_BACKEND_URL
 })()
+
+const api: AxiosInstance = axios.create({
+  baseURL: `${API_BASE_URL}/api`,
+  timeout: 10000,
+  headers: {
+    "Content-Type": "application/json",
+  },
+})
+
+// Request interceptor (future auth ready)
+api.interceptors.request.use(
+  (config: InternalAxiosRequestConfig) => {
+    // const token = localStorage.getItem("token")
+    // if (token) {
+    //   config.headers.Authorization = `Bearer ${token}`
+    // }
+    return config
+  },
+  (error: AxiosError) => Promise.reject(error)
+)
+
+// Response interceptor (central error handling)
+api.interceptors.response.use(
+  (response: AxiosResponse) => response,
+  (error: AxiosError) => {
+    if (error.response) {
+      console.error("API Error:", error.response.data)
+      return Promise.reject(error.response.data)
+    } else if (error.request) {
+      console.error("Network Error:", error.message)
+      return Promise.reject({
+        message: "Network error. Please check your connection.",
+      })
+    } else {
+      console.error("Error:", error.message)
+      return Promise.reject({ message: error.message })
+    }
+  }
+)
+
+/* =========================================================
+   CAR SERVICE APIs
+========================================================= */
+
+export const carServiceAPI = {
+  createService(serviceData: unknown) {
+    return api.post("/services", serviceData)
+  },
+
+  getServicesByAdvisor(advisorId: string, page = 1, limit = 7) {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString(),
+    })
+
+    return api.get(
+      `/services/advisor/${encodeURIComponent(advisorId)}?${params}`
+    )
+  },
+
+  getServiceById(id: string) {
+    return api.get(`/services/${id}`)
+  },
+
+  updateService(id: string, updateData: unknown) {
+    return api.put(`/services/${id}`, updateData)
+  },
+
+  deleteService(id: string) {
+    return api.delete(`/services/${id}`)
+  },
+
+  healthCheck() {
+    return api.get("/health")
+  },
+}
+
+/* =========================================================
+   EXPORT DEFAULT AXIOS INSTANCE
+========================================================= */
+
+export default api

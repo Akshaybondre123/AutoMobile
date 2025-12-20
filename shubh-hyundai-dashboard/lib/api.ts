@@ -1,3 +1,5 @@
+import { API_BASE_URL } from "./config"
+
 // Fake API for dummy data
 export interface ServiceRecord {
   id: string
@@ -296,9 +298,6 @@ export async function uploadServiceData(
     formData.append('excelFile', file)
     formData.append('file_type', reportType === 'operations' ? 'operations_part' : reportType === 'service_booking' ? 'booking_list' : reportType)
     formData.append('uploaded_by', uploadedBy)
-    formData.append('org_id', orgId)
-    formData.append('showroom_id', showroomId)
-
     const response = await fetch(getApiUrl("/api/excel/upload"), {
       method: 'POST',
       body: formData,

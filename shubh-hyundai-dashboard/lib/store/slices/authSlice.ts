@@ -1,6 +1,6 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit'
 
-export type UserRole = "owner" | "service_manager" | "service_advisor" | "gm_service"
+export type UserRole = "owner" | "general_manager" | "service_manager" | "service_advisor" | "body_shop_manager" | "gm_service"
 
 export interface User {
   id: string
@@ -9,6 +9,8 @@ export interface User {
   role: UserRole
   city?: string
   org_id?: string
+  showroom_id?: string
+  showroom_city?: string
 }
 
 interface AuthState {

@@ -570,8 +570,10 @@ export const getUserPermissionsByEmail = async (req, res) => {
     const { email } = req.params;
     console.log(`Fetching permissions for user email: ${email}`);
 
-    // Find user by email
-    const user = await User.findOne({ email }).lean();
+    // Find user by email and populate showroom to get city
+    const user = await User.findOne({ email })
+      .populate('showroom_id', 'showroom_city')
+      .lean();
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -584,13 +586,20 @@ export const getUserPermissionsByEmail = async (req, res) => {
     
     console.log(`Found ${permissions.length} permissions for user ${email}`);
     
+    // Extract showroom_id and showroom_city
+    // When populated, showroom_id is an object with _id and showroom_city
+    const showroomId = user.showroom_id?._id?.toString() || user.showroom_id?.toString() || null;
+    const showroomCity = user.showroom_id?.showroom_city || null;
+    
     res.status(200).json({
       success: true,
       data: {
         user: {
           _id: user._id,
           name: user.name,
-          email: user.email
+          email: user.email,
+          showroom_id: showroomId,
+          showroom_city: showroomCity
         },
         permissions: permissions
       }

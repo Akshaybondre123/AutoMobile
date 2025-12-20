@@ -20,6 +20,8 @@ function HomeContent() {
         router.push("/dashboard/gm")
       } else if (user?.role === "service_manager") {
         router.push("/dashboard/sm")
+      } else if (user?.role === "body_shop_manager") {
+        router.push("/dashboard/bdm")
       } else if (user?.role === "service_advisor") {
         router.push("/dashboard/sa")
       } else if (user) {

@@ -1,3 +1,4 @@
+// server.js
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -5,6 +6,8 @@ import mongoose from "mongoose";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+
+// Routes
 import uploadRoutes from "./routes/uploadRoutes.js";
 import excelUploadRoutes from "./routes/excelUploadRoutes.js";
 import serviceManagerRoutes from "./routes/serviceManagerRoutes.js";
@@ -12,15 +15,19 @@ import rbacRoutes from "./routes/rbacRoutes.js";
 import bookingListRoutes from "./routes/bookingListRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
+import carServiceRoutes from "./routes/carServiceRoutes.js";
+
+// Middleware
+import errorHandler from "./middleware/errorHandler.js";
 
 dotenv.config();
 const app = express();
 
-// Get __dirname equivalent in ES modules
+/* -------------------- __dirname for ES Modules -------------------- */
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Create uploads directories if they don't exist
+/* -------------------- Upload folders -------------------- */
 const uploadsDir = path.join(__dirname, "uploads");
 const excelUploadsDir = path.join(__dirname, "uploads", "excel");
 
@@ -60,7 +67,13 @@ app.use(cors({
 
 app.use(express.json());
 
-// Register routes
+// Request logger
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.path} - ${new Date().toISOString()}`);
+  next();
+});
+
+/* -------------------- Routes -------------------- */
 app.use("/api", uploadRoutes);
 app.use("/api/excel", excelUploadRoutes);
 app.use("/api/service-manager", serviceManagerRoutes);
@@ -68,48 +81,47 @@ app.use("/api/rbac", rbacRoutes);
 app.use("/api/booking-list", bookingListRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/services", carServiceRoutes);
 
-// Health check endpoint
+/* -------------------- Health Check -------------------- */
 app.get("/", (req, res) => {
-  res.json({ 
+  res.json({
+    success: true,
     message: "Auto Backend API is running",
     status: "healthy",
     timestamp: new Date().toISOString()
   });
 });
 
-// 404 handler - must return JSON
-app.use((req, res, next) => {
-  res.status(404).json({ 
+/* -------------------- 404 Handler -------------------- */
+app.use((req, res) => {
+  res.status(404).json({
     success: false,
-    message: `Route ${req.method} ${req.url} not found`,
-    error: "Not Found"
+    message: `Route ${req.method} ${req.originalUrl} not found`
   });
 });
 
-// Error handler - must return JSON
-app.use((err, req, res, next) => {
-  console.error("Error:", err);
-  res.status(err.status || 500).json({
-    success: false,
-    message: err.message || "Internal Server Error",
-    error: process.env.NODE_ENV === 'production' ? 'Server Error' : err.stack
-  });
-});
+/* -------------------- Global Error Handler -------------------- */
+app.use(errorHandler);
 
+/* -------------------- MongoDB Connection -------------------- */
 mongoose.connect(process.env.MONGO_URI)
   .then(() => {
+    console.log("MongoDB URI:", process.env.MONGO_URI);
     console.log("✅ MongoDB connected successfully");
 
-    // Start server only after DB connects (for local development)
-    if (process.env.NODE_ENV !== 'production') {
-      // Listen on all interfaces (0.0.0.0) to allow access from network IPs
-      app.listen(5000, '0.0.0.0', () => {
-        console.log("🚀 Server running on port 5000");
-        console.log("📡 Accessible at:");
-        console.log("   - http://localhost:5000");
-        console.log("   - http://127.0.0.1:5000");
-        console.log("   - http://[your-network-ip]:5000");
+    if (process.env.NODE_ENV !== "production") {
+      const PORT = process.env.PORT || 5000;
+      const server = app.listen(PORT, () => {
+        console.log(`🚀 Server running on port ${PORT}`);
+      });
+
+      // Graceful shutdown
+      process.on("SIGTERM", () => {
+        console.log("SIGTERM received, shutting down...");
+        server.close(() => {
+          console.log("Process terminated");
+        });
       });
     }
   })
@@ -117,5 +129,5 @@ mongoose.connect(process.env.MONGO_URI)
     console.error("❌ MongoDB connection failed:", err.message);
   });
 
-// Export for Vercel serverless
+/* -------------------- Export for Vercel / Testing -------------------- */
 export default app;

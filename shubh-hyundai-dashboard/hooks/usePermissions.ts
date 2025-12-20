@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from "react"
 import { useAuth } from "@/lib/auth-context"
 import { getApiUrl } from "@/lib/config"
 import { useUserApiData } from "@/hooks/useGlobalApiData"
+import { useAppDispatch } from "@/lib/store/hooks"
+import { setUser } from "@/lib/store/slices/authSlice"
 
 // Shared across all hook instances to avoid duplicate network calls
 const permissionCache = new Map<string, { timestamp: number; perms: string[] }>()
@@ -20,6 +22,7 @@ interface Permission {
 
 export function usePermissions() {
   const { user } = useAuth()
+  const dispatch = useAppDispatch()
   const [permissions, setPermissions] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -122,6 +125,26 @@ export function usePermissions() {
         if (directResponse.ok) {
           const directData = await directResponse.json()
           console.log("📦 Full API Response:", JSON.stringify(directData, null, 2))
+          
+          // Extract user data from response (includes showroom_id and showroom_city)
+          const userDataFromApi = directData.data?.user
+          if (userDataFromApi && user) {
+            console.log("👤 User data from permissions API:", userDataFromApi)
+            // Update user in auth context with showroom_id and showroom_city if they're present
+            if (userDataFromApi.showroom_id !== undefined || userDataFromApi.showroom_city !== undefined) {
+              console.log("📍 Updating user with showroom data:", {
+                showroom_id: userDataFromApi.showroom_id,
+                showroom_city: userDataFromApi.showroom_city
+              })
+              // Update the user object with showroom data
+              const updatedUser = {
+                ...user,
+                showroom_id: userDataFromApi.showroom_id || user.showroom_id,
+                showroom_city: userDataFromApi.showroom_city || user.showroom_city
+              }
+              dispatch(setUser(updatedUser))
+            }
+          }
           
           // Try multiple ways to extract permissions
           let directPermissions = directData.data?.permissions || directData.permissions || directData.data || []
@@ -384,10 +407,10 @@ export function usePermissions() {
   }
 
   const getWorkingRoleBasedPermissions = (role: string): string[] => {
-  // Only owner gets GM-level role-based fallbacks by default.
-  // All other users must have explicit permissions from database.
-  const roleStr = String(role || "").toLowerCase()
-  if (roleStr === "owner") {
+    // Only owner gets GM-level role-based fallbacks by default.
+    // All other users must have explicit permissions from database.
+    const roleStr = String(role || "").toLowerCase()
+    if (roleStr === "owner") {
       return [
         "dashboard",
         "overview",
@@ -408,8 +431,44 @@ export function usePermissions() {
         "target_report"
       ]
     }
-
-    return []
+    
+    // Fallback for other roles (for backward compatibility)
+    switch (roleStr) {
+      case "general_manager":
+        return [
+          "dashboard",
+          "overview",
+          "ro_billing_dashboard",
+          "operations_dashboard",
+          "warranty_dashboard",
+          "service_booking_dashboard",
+          "manage_users",
+          "manage_roles",
+          "ro_billing_upload",
+          "operations_upload",
+          "warranty_upload",
+          "service_booking_upload",
+          "ro_billing_report",
+          "operations_report",
+          "warranty_report",
+          "service_booking_report",
+          "target_report"
+        ]
+      case "service_manager":
+        return []
+      case "service_advisor":
+        return [
+          "dashboard",
+          "overview"
+        ]
+      case "body_shop_manager":
+        return [
+          "dashboard",
+          "overview"
+        ]
+      default:
+        return []
+    }
   }
 
   const getRoleBasedPermissions = (role: string): string[] => {

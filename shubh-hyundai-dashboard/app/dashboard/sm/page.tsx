@@ -3589,10 +3589,8 @@ export default function SMDashboard() {
                     SM Dashboard
                   </h1>
                   <p className="text-blue-100 text-sm flex items-center gap-2 mt-0.5">
-                    <Gauge className="h-3.5 w-3.5" />
-                    {showroomCity && showroomCity.toLowerCase() !== 'com' 
-                      ? `${showroomCity} • ${user?.name}` 
-                      : user?.name || 'Unknown User'}
+                    <Gauge className="h-3.5 w-3.5" /> 
+                    {user?.showroom_city} • {user?.name} 
                     {isLoading && hasData && (
                       <span className="ml-2 flex items-center gap-1 text-xs bg-white/20 px-2 py-1 rounded-full">
                         <Loader2 className="h-3 w-3 animate-spin" />

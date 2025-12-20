@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation"
 import { useAuth } from "@/lib/auth-context"
 import { usePermissions } from "@/hooks/usePermissions"
 import { Button } from "@/components/ui/button"
-import { BarChart3, Upload, Target, LogOut, Menu, X, Settings, LayoutDashboard } from "lucide-react"
+import { BarChart3, Upload, Target, LogOut, Menu, X, Settings, LayoutDashboard, Wrench, PlusSquare } from "lucide-react"
 import { useState } from "react"
 
 export function Sidebar() {
@@ -27,6 +27,9 @@ export function Sidebar() {
   
   // Only owner has fixed role - all others use permissions
   const isGM = isOwner()
+  const isSM = user.role === "service_manager" || user.role?.toLowerCase().includes("service_manager")
+  const isSA = user.role === "service_advisor" || user.role?.toLowerCase().includes("service_advisor")
+  const isBDM = user.role === "body_shop_manager" || user.role?.toLowerCase().includes("body_shop_manager")
   
   // Determine dashboard based on permissions (not role) - matches main dashboard routing logic
   // Check for GM-level permissions (manage_users, manage_roles, gm_targets)
@@ -47,8 +50,10 @@ export function Sidebar() {
     dashboardHref = "/dashboard/sm"
   } else if (hasPermission('overview')) {
     dashboardHref = "/dashboard/gm" // overview routes to GM
-  } else if (user.role?.toLowerCase().includes("service_manager")) {
+  } else if (isSM) {
     dashboardHref = "/dashboard/sm"
+  } else if (isBDM) {
+    dashboardHref = "/dashboard/bdm"
   }
 
   const navItems = [
@@ -58,6 +63,19 @@ export function Sidebar() {
       href: dashboardHref,
       icon: BarChart3,
       show: true, // Everyone can see their respective dashboard
+    },
+    // Service Advisor specific tools
+    {
+      label: "Services Dashboard",
+      href: "/dashboard/sa/services",
+      icon: Wrench,
+      show: isSA,
+    },
+    {
+      label: "Create Service",
+      href: "/dashboard/sa/create-service",
+      icon: PlusSquare,
+      show: isSA,
     },
     
     // GM Module Pages - GM sees all, others need permission
