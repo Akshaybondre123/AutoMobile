@@ -13,43 +13,37 @@ export default function LoginPage() {
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [isLoading, setIsLoading] = useState(false)
-  const { login } = useAuth()
+  const { login, user } = useAuth()
   const router = useRouter()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
+    
+    // Validate inputs before attempting login
+    const trimmedEmail = email.trim()
+    const trimmedPassword = password.trim()
+    
+    if (!trimmedEmail || !trimmedPassword) {
+      setError("Email and password are required")
+      return
+    }
+    
     setIsLoading(true)
 
     try {
       // Perform login
-      await login(email, password)
-
-      // Redirect based on role or email
-      if (email === "gm@shubh.com") {
-        router.push("/dashboard/gm")
-      } else if (email.startsWith("sm.")) {
-        router.push("/dashboard/sm")
-      } else if (email.startsWith("sa.")) {
-        router.push("/dashboard/sa")
-      } else {
-        router.push("/dashboard") // fallback (optional)
-      }
+      await login(trimmedEmail, trimmedPassword)
+      
+      // After login, redirect to /dashboard and let the dashboard page handle routing
+      // This ensures user state is fully loaded before routing decisions
+      router.push("/dashboard")
     } catch (err) {
-      setError("Invalid email or password")
+      setError(err instanceof Error ? err.message : "Invalid email or password")
     } finally {
       setIsLoading(false)
     }
   }
-
-  const demoAccounts = [
-    { email: "gm@shubh.com", role: "General Manager", city: "All Cities" },
-    { email: "sm.pune@shubh.com", role: "Service Manager", city: "Pune" },
-    { email: "sm.mumbai@shubh.com", role: "Service Manager", city: "Mumbai" },
-    { email: "sm.nagpur@shubh.com", role: "Service Manager", city: "Nagpur" },
-    { email: "sa.pune@shubh.com", role: "Service Advisor", city: "Pune" },
-    { email: "sa.mumbai@shubh.com", role: "Service Advisor", city: "Mumbai" },
-  ]
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/10 to-accent/10 flex items-center justify-center p-4">
@@ -97,26 +91,6 @@ export default function LoginPage() {
                 {isLoading ? "Logging in..." : "Login"}
               </Button>
             </form>
-
-            <div className="border-t pt-6">
-              <p className="text-sm font-medium mb-3">Demo Accounts (Password: password)</p>
-              <div className="space-y-2">
-                {demoAccounts.map((account) => (
-                  <button
-                    key={account.email}
-                    onClick={() => {
-                      setEmail(account.email)
-                      setPassword("password")
-                    }}
-                    className="w-full text-left p-3 rounded-lg border border-border hover:bg-secondary transition-colors"
-                  >
-                    <p className="text-sm font-medium">{account.role}</p>
-                    <p className="text-xs text-muted-foreground">{account.email}</p>
-                    <p className="text-xs text-accent">{account.city}</p>
-                  </button>
-                ))}
-              </div>
-            </div>
           </CardContent>
         </Card>
       </div>

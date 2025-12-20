@@ -323,264 +323,278 @@ Upload Time: ${result.uploadDate}`)
   }, {})
 
   return (
-  <Card className="border-2 border-indigo-200 bg-gradient-to-br from-white to-indigo-50/30 shadow-lg">
-    <CardHeader className="bg-gradient-to-r from-indigo-50 to-purple-50 border-b border-indigo-200">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="rounded-lg bg-indigo-100 p-2">
-            <FileText className="h-5 w-5 text-indigo-600" />
-          </div>
-          <div>
-            <CardTitle className="text-xl text-gray-900">Repair Order List</CardTitle>
-            <CardDescription>Service Advisor → Work Type → Status breakdown with date filtering</CardDescription>
-          </div>
+<Card className="border-2 border-indigo-200 bg-gradient-to-br from-white to-indigo-50/30 shadow-lg">
+  <CardHeader className="bg-gradient-to-r from-indigo-50 to-purple-50 border-b border-indigo-200">
+    <div className="flex items-center justify-between">
+      <div className="flex items-center gap-3">
+        <div className="rounded-lg bg-indigo-100 p-2">
+          <FileText className="h-5 w-5 text-indigo-600" />
         </div>
-        <div className="flex items-center gap-3">
-          <Badge variant="secondary" className="bg-indigo-100 text-indigo-800">
-            {filteredData.length} Records
-          </Badge>
-          <div className="flex items-center gap-2">
-            <label htmlFor="date-filter" className="text-sm font-medium text-gray-700">
-              Filter by R/O Date:
-            </label>
-            <input
-              id="date-filter"
-              type="date"
-              value={dateFilter}
-              onChange={(e) => setDateFilter(e.target.value)}
-              className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-            {dateFilter && (
-              <Button
-                onClick={() => setDateFilter('')}
-                variant="outline"
-                size="sm"
-                className="text-xs"
-              >
-                Clear
-              </Button>
-            )}
-          </div>
-          <div>
-            <input
-              type="file"
-              ref={fileInputRef}
-              accept=".xlsx,.xls"
-              onChange={handleFileChange}
-              disabled={uploadingFile}
-              className="hidden"
-              id="repair-order-file-input"
-            />
-            <label htmlFor="repair-order-file-input">
-              <Button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploadingFile}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white"
-                size="sm"
-              >
-                {uploadingFile ? (
-                  <>
-                    <div className="animate-spin mr-2 h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
-                    Uploading...
-                  </>
-                ) : (
-                  <>
-                    <Upload className="mr-2 h-4 w-4" />
-                    Upload Excel
-                  </>
-                )}
-              </Button>
-            </label>
-          </div>
+        <div>
+          <CardTitle className="text-xl text-gray-900">Repair Order List</CardTitle>
+          <CardDescription>Service Advisor → Work Type → Status breakdown with date filtering</CardDescription>
         </div>
       </div>
-    </CardHeader>
+      <div className="flex items-center gap-3">
+        <Badge variant="secondary" className="bg-indigo-100 text-indigo-800">
+          {filteredData.length} Records
+        </Badge>
+        <div className="flex items-center gap-2">
+          <label htmlFor="date-filter" className="text-sm font-medium text-gray-700">
+            Filter by R/O Date:
+          </label>
+          <input
+            id="date-filter"
+            type="date"
+            value={dateFilter}
+            onChange={(e) => setDateFilter(e.target.value)}
+            className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+          {dateFilter && (
+            <Button
+              onClick={() => setDateFilter('')}
+              variant="outline"
+              size="sm"
+              className="text-xs"
+            >
+              Clear
+            </Button>
+          )}
+        </div>
+        <div>
+          <input
+            type="file"
+            ref={fileInputRef}
+            accept=".xlsx,.xls"
+            onChange={handleFileChange}
+            disabled={uploadingFile}
+            className="hidden"
+            id="repair-order-file-input"
+          />
+          <label htmlFor="repair-order-file-input">
+            <Button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadingFile}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white"
+              size="sm"
+            >
+              {uploadingFile ? (
+                <>
+                  <div className="animate-spin mr-2 h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <Upload className="mr-2 h-4 w-4" />
+                  Upload Excel
+                </>
+              )}
+            </Button>
+          </label>
+        </div>
+      </div>
+    </div>
+  </CardHeader>
 
-    <CardContent className="p-6">
-      {isLoading ? (
-        <div className="text-center py-12">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-indigo-100 mb-4">
-            <div className="animate-spin">
-              <FileText className="h-6 w-6 text-indigo-600" />
-            </div>
+  <CardContent className="p-6">
+    {isLoading ? (
+      <div className="text-center py-12">
+        <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-indigo-100 mb-4">
+          <div className="animate-spin">
+            <FileText className="h-6 w-6 text-indigo-600" />
           </div>
-          <p className="text-gray-600">Loading Repair Order List...</p>
         </div>
-      ) : error ? (
-        <div className="bg-red-50 border border-red-300 rounded-lg p-6 text-center">
-          <AlertCircle className="h-10 w-10 text-red-600 mx-auto mb-3" />
-          <p className="text-red-800 font-semibold">{error}</p>
-        </div>
-      ) : Object.keys(groupedData).length === 0 ? (
-        <div className="bg-blue-50 border border-blue-300 rounded-lg p-8 text-center">
-          <FileText className="h-12 w-12 text-blue-600 mx-auto mb-4" />
-          <p className="text-gray-800 font-semibold text-lg">No Repair Order Data</p>
-          <p className="text-gray-600 text-sm mt-2">Please upload a Repair Order List Excel file to see the data.</p>
-        </div>
-      ) : (
-        <div className="space-y-6">
-          {Object.entries(groupedData).map(([advisor, workTypes]: [string, any]) => {
-            // Calculate total records for this advisor
-            let advisorTotalRecords = 0;
-            Object.values(workTypes).forEach((statuses: any) => {
-              Object.values(statuses).forEach((records: any) => {
-                advisorTotalRecords += records.length;
-              });
+        <p className="text-gray-600">Loading Repair Order List...</p>
+      </div>
+    ) : error ? (
+      <div className="bg-red-50 border border-red-300 rounded-lg p-6 text-center">
+        <AlertCircle className="h-10 w-10 text-red-600 mx-auto mb-3" />
+        <p className="text-red-800 font-semibold">{error}</p>
+      </div>
+    ) : Object.keys(groupedData).length === 0 ? (
+      <div className="bg-blue-50 border border-blue-300 rounded-lg p-8 text-center">
+        <FileText className="h-12 w-12 text-blue-600 mx-auto mb-4" />
+        <p className="text-gray-800 font-semibold text-lg">No Repair Order Data</p>
+        <p className="text-gray-600 text-sm mt-2">Please upload a Repair Order List Excel file to see the data.</p>
+      </div>
+    ) : (
+      <div className="space-y-6">
+        {Object.entries(groupedData).map(([advisor, workTypes]: [string, any]) => {
+          // Calculate total records for this advisor
+          let advisorTotalRecords = 0;
+          let advisorOpenRecords = 0; // NEW: Count open records for this advisor
+          
+          Object.values(workTypes).forEach((statuses: any) => {
+            Object.entries(statuses as any).forEach(([status, records]: [string, any]) => {
+              const recordCount = records.length;
+              advisorTotalRecords += recordCount;
+              
+              // Count open records
+              if (status.toLowerCase() === 'open') {
+                advisorOpenRecords += recordCount;
+              }
             });
-            
-            return (
-              <Card key={advisor} className="border border-gray-200">
-                <CardHeader 
-                  className="bg-gradient-to-r from-indigo-50 to-white py-3 cursor-pointer hover:bg-indigo-100 transition-colors"
-                  onClick={() => setExpandedAdvisors(prev => ({ ...prev, [advisor]: !prev[advisor] }))}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center">
-                        <span className="text-indigo-700 font-bold text-sm">
-                          {advisor.charAt(0).toUpperCase()}
-                        </span>
-                      </div>
-                      <CardTitle className="text-lg text-gray-900">{advisor}</CardTitle>
-                      <Badge variant="outline" className="bg-indigo-50 text-indigo-700">
-                        Service Advisor
-                      </Badge>
+          });
+          
+          return (
+            <Card key={advisor} className="border border-gray-200">
+              <CardHeader 
+                className="bg-gradient-to-r from-indigo-50 to-white py-3 cursor-pointer hover:bg-indigo-100 transition-colors"
+                onClick={() => setExpandedAdvisors(prev => ({ ...prev, [advisor]: !prev[advisor] }))}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center">
+                      <span className="text-indigo-700 font-bold text-sm">
+                        {advisor.charAt(0).toUpperCase()}
+                      </span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="bg-purple-50 text-purple-700">
-                        {Object.keys(workTypes).length} Work Types
-                      </Badge>
-                      <Badge variant="outline" className="bg-green-50 text-green-700">
-                        {advisorTotalRecords} Records
-                      </Badge>
-                      <div className="text-gray-400">
-                        {expandedAdvisors[advisor] ? '▼' : '▶'}
+                    <CardTitle className="text-lg text-gray-900">{advisor}</CardTitle>
+                    <Badge variant="outline" className="bg-indigo-50 text-indigo-700">
+                      Service Advisor
+                    </Badge>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {/* UPDATED SECTION: Added Open count badge in the middle */}
+                    <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
+                      <div className="flex items-center gap-1">
+                        <div className="w-2 h-2 rounded-full bg-orange-500"></div>
+                        <span>Open - {advisorOpenRecords}</span>
                       </div>
+                    </Badge>
+                    <Badge variant="outline" className="bg-purple-50 text-purple-700">
+                      {Object.keys(workTypes).length} Work Types
+                    </Badge>
+                    <Badge variant="outline" className="bg-green-50 text-green-700">
+                      {advisorTotalRecords} Records
+                    </Badge>
+                    <div className="text-gray-400">
+                      {expandedAdvisors[advisor] ? '▼' : '▶'}
                     </div>
                   </div>
-                </CardHeader>
-                <CardContent className="p-4">
-                  {expandedAdvisors[advisor] ? (
-                    // Expanded view with all details
-                    <>
-                      {Object.entries(workTypes).map(([workType, statuses]: [string, any]) => {
-                        // Calculate total records for this work type
-                        let workTypeTotalRecords = 0;
-                        Object.values(statuses as any).forEach((records: any) => {
-                          workTypeTotalRecords += records.length;
-                        });
-                        
-                        return (
-                          <div key={workType} className="mb-6 last:mb-0">
-                            <div className="flex items-center justify-between mb-3">
-                              <div className="flex items-center gap-2">
-                                <div className="w-6 h-6 rounded bg-purple-100 flex items-center justify-center">
-                                  <Wrench className="h-3 w-3 text-purple-600" />
-                                </div>
-                                <h4 className="font-semibold text-gray-800">{workType}</h4>
-                                <Badge variant="outline" className="bg-purple-50 text-purple-700 text-xs">
-                                  Work Type
-                                </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="p-4">
+                {expandedAdvisors[advisor] ? (
+                  // Expanded view with all details
+                  <>
+                    {Object.entries(workTypes).map(([workType, statuses]: [string, any]) => {
+                      // Calculate total records for this work type
+                      let workTypeTotalRecords = 0;
+                      Object.values(statuses as any).forEach((records: any) => {
+                        workTypeTotalRecords += records.length;
+                      });
+                      
+                      return (
+                        <div key={workType} className="mb-6 last:mb-0">
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <div className="w-6 h-6 rounded bg-purple-100 flex items-center justify-center">
+                                <Wrench className="h-3 w-3 text-purple-600" />
                               </div>
-                              <Badge variant="outline" className="bg-blue-50 text-blue-700">
-                                {workTypeTotalRecords} Records
+                              <h4 className="font-semibold text-gray-800">{workType}</h4>
+                              <Badge variant="outline" className="bg-purple-50 text-purple-700 text-xs">
+                                Work Type
                               </Badge>
                             </div>
-                            
-                            {Object.entries(statuses)
-                              .filter(([status, records]: [string, any]) => records.length > 0)
-                              .map(([status, records]: [string, any]) => (
-                                <div key={status} className="ml-8 mb-4">
-                                  <div className="flex items-center gap-2 mb-2">
-                                    <div className="w-4 h-4 rounded bg-green-100 flex items-center justify-center">
-                                      <CheckCircle className="h-2 w-2 text-green-600" />
-                                    </div>
-                                    <h5 className="font-medium text-gray-700">{status} - {records.length}</h5>
-                                   
+                            <Badge variant="outline" className="bg-blue-50 text-blue-700">
+                              {workTypeTotalRecords} Records
+                            </Badge>
+                          </div>
+                          
+                          {Object.entries(statuses)
+                            .filter(([status, records]: [string, any]) => records.length > 0)
+                            .map(([status, records]: [string, any]) => (
+                              <div key={status} className="ml-8 mb-4">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <div className="w-4 h-4 rounded bg-green-100 flex items-center justify-center">
+                                    <CheckCircle className="h-2 w-2 text-green-600" />
                                   </div>
-                                  
-                                  {/* Show detailed table only for Open status */}
-                                  {status.toLowerCase() === 'open' && (
-                                    <div className="ml-6 overflow-x-auto">
-                                      <table className="w-full text-sm border border-gray-200 rounded-lg">
-                                        <thead>
-                                          <tr className="bg-gray-50 border-b">
-                                            <th className="text-left py-2 px-3 font-medium text-gray-700">Model</th>
-                                            <th className="text-left py-2 px-3 font-medium text-gray-700">Reg No</th>
-                                            <th className="text-left py-2 px-3 font-medium text-gray-700">R/O No</th>
-                                            <th className="text-left py-2 px-3 font-medium text-gray-700">R/O Date</th>
+                                  <h5 className="font-medium text-gray-700">{status} - {records.length}</h5>
+                                </div>
+                                
+                                {/* Show detailed table only for Open status */}
+                                {status.toLowerCase() === 'open' && (
+                                  <div className="ml-6 overflow-x-auto">
+                                    <table className="w-full text-sm border border-gray-200 rounded-lg">
+                                      <thead>
+                                        <tr className="bg-gray-50 border-b">
+                                          <th className="text-left py-2 px-3 font-medium text-gray-700">Model</th>
+                                          <th className="text-left py-2 px-3 font-medium text-gray-700">Reg No</th>
+                                          <th className="text-left py-2 px-3 font-medium text-gray-700">R/O No</th>
+                                          <th className="text-left py-2 px-3 font-medium text-gray-700">R/O Date</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {records.map((record: any, idx: number) => (
+                                          <tr key={idx} className="border-b hover:bg-green-50">
+                                            <td className="py-2 px-3">{record.model}</td>
+                                            <td className="py-2 px-3">{record.reg_no}</td>
+                                            <td className="py-2 px-3 font-medium">{record.ro_no}</td>
+                                            <td className="py-2 px-3 text-blue-600">{formatRODate(record.ro_date)}</td>
                                           </tr>
-                                        </thead>
-                                        <tbody>
-                                          {records.map((record: any, idx: number) => (
-                                            <tr key={idx} className="border-b hover:bg-green-50">
-                                              <td className="py-2 px-3">{record.model}</td>
-                                              <td className="py-2 px-3">{record.reg_no}</td>
-                                              <td className="py-2 px-3 font-medium">{record.ro_no}</td>
-                                              <td className="py-2 px-3 text-blue-600">{formatRODate(record.ro_date)}</td>
-                                            </tr>
-                                          ))}
-                                        </tbody>
-                                      </table>
-                                    </div>
-                                  )}
-                                </div>
-                              ))}
-                          </div>
-                        );
-                      })}
-                    </>
-                  ) : (
-                    // Collapsed view - show summary of work types
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {Object.entries(workTypes).map(([workType, statuses]: [string, any]) => {
-                        // Calculate total records for this work type
-                        let workTypeTotalRecords = 0;
-                        Object.values(statuses as any).forEach((records: any) => {
-                          workTypeTotalRecords += records.length;
-                        });
-                        
-                        // Count open records specifically
-                        const openRecords = statuses['Open'] ? statuses['Open'].length : 0;
-                        
-                        return (
-                          <div 
-                            key={workType} 
-                            className="border border-gray-200 rounded-lg p-3 hover:bg-gray-50 transition-colors"
-                          >
-                            <div className="flex items-center gap-2 mb-2">
-                              <div className="w-5 h-5 rounded bg-purple-100 flex items-center justify-center">
-                                <Wrench className="h-2.5 w-2.5 text-purple-600" />
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
                               </div>
-                              <span className="font-medium text-gray-800 text-sm">{workType}</span>
+                            ))}
+                        </div>
+                      );
+                    })}
+                  </>
+                ) : (
+                  // Collapsed view - show summary of work types
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {Object.entries(workTypes).map(([workType, statuses]: [string, any]) => {
+                      // Calculate total records for this work type
+                      let workTypeTotalRecords = 0;
+                      Object.values(statuses as any).forEach((records: any) => {
+                        workTypeTotalRecords += records.length;
+                      });
+                      
+                      // Count open records specifically
+                      const openRecords = statuses['Open'] ? statuses['Open'].length : 0;
+                      
+                      return (
+                        <div 
+                          key={workType} 
+                          className="border border-gray-200 rounded-lg p-3 hover:bg-gray-50 transition-colors"
+                        >
+                          <div className="flex items-center gap-2 mb-2">
+                            <div className="w-5 h-5 rounded bg-purple-100 flex items-center justify-center">
+                              <Wrench className="h-2.5 w-2.5 text-purple-600" />
                             </div>
-                            <div className="flex items-center justify-between text-xs">
-                              <div className="flex items-center gap-1">
-                                <div className="w-3 h-3 rounded-full bg-green-100 flex items-center justify-center">
-                                  <CheckCircle className="h-1.5 w-1.5 text-green-600" />
-                                </div>
-                                <span className="text-gray-600">{workTypeTotalRecords} Records</span>
-                              </div>
-                              {openRecords > 0 && (
-                                <Badge variant="outline" className="bg-orange-50 text-orange-700">
-                                  {openRecords} Open
-                                </Badge>
-                              )}
-                            </div>
+                            <span className="font-medium text-gray-800 text-sm">{workType}</span>
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      )}
-    </CardContent>
-  </Card>
+                          <div className="flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-1">
+                              <div className="w-3 h-3 rounded-full bg-green-100 flex items-center justify-center">
+                                <CheckCircle className="h-1.5 w-1.5 text-green-600" />
+                              </div>
+                              <span className="text-gray-600">{workTypeTotalRecords} Records</span>
+                            </div>
+                            {openRecords > 0 && (
+                              <Badge variant="outline" className="bg-orange-50 text-orange-700">
+                                {openRecords} Open
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+    )}
+  </CardContent>
+</Card>
 )}
 
 // Advisor Operations Section Component - Integrated Operations Upload Interface
@@ -1125,6 +1139,7 @@ export default function SMDashboard() {
   const { markForRefresh } = useDashboard()
   const router = useRouter()
   
+
   // Declare ALL useState hooks first (before any conditional logic)
   const [selectedDataType, setSelectedDataType] = useState<DataType>("average")
   
@@ -1154,10 +1169,81 @@ export default function SMDashboard() {
   const [dateFilter, setDateFilter] = useState('')
   const [selectedWorkType, setSelectedWorkType] = useState('all')
   const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({})
+  const [showroomCity, setShowroomCity] = useState<string | null>(null)
 
-  const isGeneralManager = user?.role === "general_manager"
+  // Fetch user's showroom city from database
+  useEffect(() => {
+    const fetchShowroomCity = async () => {
+      if (!user?.email) {
+        return
+      }
+
+      try {
+        // Get user's showroom_id from user object
+        const userAny: any = user
+        const userShowroomId = userAny?.showroom_id || userAny?.showroomId
+        
+        // If we have showroom_id, fetch showrooms to get the city
+        if (userShowroomId) {
+          const showroomsResponse = await fetch(getApiUrl("/api/rbac/showrooms"), {
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+            }
+          })
+
+          if (showroomsResponse.ok) {
+            const showroomsResult = await showroomsResponse.json()
+            if (showroomsResult.success && Array.isArray(showroomsResult.data)) {
+              const showrooms = showroomsResult.data as Array<{ _id: string, showroom_city?: string }>
+              
+              // Find the showroom that matches user's showroom_id
+              const userShowroom = showrooms.find((showroom) => {
+                return String(showroom._id) === String(userShowroomId)
+              })
+              
+              if (userShowroom && userShowroom.showroom_city) {
+                // Use the showroom_city from the database
+                setShowroomCity(userShowroom.showroom_city.trim())
+              } else {
+                setShowroomCity(null)
+              }
+            }
+          }
+        } else {
+          // If no showroom_id, set to null
+          setShowroomCity(null)
+        }
+      } catch (error) {
+        console.error('❌ Error fetching showroom city:', error)
+        setShowroomCity(null)
+      }
+    }
+
+    if (user) {
+      fetchShowroomCity()
+    }
+  }, [user])
+
+  // Only owner has fixed/privileged access - all others must have permissions
+  const isOwner = user?.role === "owner"
   const hasAnyPermissions = permissions.length > 0
-  const hasSMAccess = isGeneralManager || SM_REQUIRED_PERMISSIONS.some(permission => hasPermission(permission))
+  // Check if user has ANY of the SM required permissions (or is owner)
+  const hasSMAccess = isOwner || SM_REQUIRED_PERMISSIONS.some(permission => hasPermission(permission))
+
+  // Debug logging for permissions
+  useEffect(() => {
+    if (!permissionsLoading && user) {
+      console.log("🔍 SM Dashboard - User:", user.email, "Role:", user.role)
+      console.log("🔍 SM Dashboard - Permissions count:", permissions.length)
+      console.log("🔍 SM Dashboard - Permissions:", permissions)
+      console.log("🔍 SM Dashboard - isOwner:", isOwner)
+      console.log("🔍 SM Dashboard - hasAnyPermissions:", hasAnyPermissions)
+      const smPermsCheck = SM_REQUIRED_PERMISSIONS.map(p => ({ perm: p, has: hasPermission(p) }))
+      console.log("🔍 SM Dashboard - Permission checks:", smPermsCheck)
+      console.log("🔍 SM Dashboard - hasSMAccess:", hasSMAccess)
+    }
+  }, [permissions, permissionsLoading, user, isOwner, hasAnyPermissions, hasPermission, hasSMAccess])
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -1240,8 +1326,12 @@ export default function SMDashboard() {
     return null
   }
 
-  // ✅ Check if user has NO permissions at all - show access denied
-  if (!hasAnyPermissions && !isGeneralManager) {
+  // ✅ Only check permissions (owner is the only fixed role)
+  // All other users must have explicit permissions
+  const hasSMAccessByRole = isOwner || SM_REQUIRED_PERMISSIONS.some(permission => hasPermission(permission))
+
+  // Check if user has NO permissions AND is NOT owner - show access denied
+  if (!hasAnyPermissions && !isOwner) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-red-50 to-orange-100">
         <div className="text-center max-w-lg mx-auto p-8">
@@ -1284,8 +1374,8 @@ export default function SMDashboard() {
     )
   }
 
-  // ✅ Check if user has SM-specific permissions - block if they don't have any relevant permissions
-  if (!hasSMAccess) {
+  // ✅ Check if user has SM access (either by service_manager role or SM permissions)
+  if (!hasSMAccessByRole) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Card className="w-96">
@@ -1387,6 +1477,38 @@ export default function SMDashboard() {
       )
     }
 
+    // Check if user has permission for this data type (skip check for 'average' - handled separately)
+    if (selectedDataType !== 'average') {
+      const dataTypePermissionMap: Record<string, string> = {
+        'ro_billing': 'ro_billing_dashboard',
+        'operations': 'operations_dashboard',
+        'warranty': 'warranty_dashboard',
+        'service_booking': 'service_booking_dashboard',
+        'repair_order_list': 'repair_order_list_dashboard',
+      }
+      const requiredPermission = dataTypePermissionMap[selectedDataType]
+      const hasRequiredPermission = isOwner || (requiredPermission && hasPermission(requiredPermission))
+      
+      // If permissions are loaded and user doesn't have permission, show access denied
+      if (!permissionsLoading && !isOwner && requiredPermission && !hasPermission(requiredPermission)) {
+        return (
+          <Card className="border-gray-200 bg-gradient-to-br from-red-50 to-white">
+            <CardContent className="p-12 text-center">
+              <AlertCircle className="h-16 w-16 mx-auto mb-4 text-red-400" />
+              <h3 className="text-xl font-semibold text-gray-700 mb-2">Access Denied</h3>
+              <p className="text-gray-600 mb-4">
+                You don't have permission to view {selectedDataType.replace('_', ' ')} data.
+              </p>
+              <p className="text-sm text-gray-500">
+                Required permission: <strong>{requiredPermission}</strong>
+              </p>
+            </CardContent>
+          </Card>
+        )
+      }
+    }
+    // For 'average' dataType, permission is checked in renderAverageView() based on ANY SM permission
+    
     // ✅ Show loading screen on first time or when loading without cached data
     if (isLoading && !dashboardData) {
       return (
@@ -1492,6 +1614,10 @@ export default function SMDashboard() {
   }
 
   const renderAverageView = () => {
+    // If user reached this page, they already have SM dashboard access
+    // No need to check permissions again - just show the average view
+    // Users with ANY SM permission should see average data
+    
     // ✅ Show loading screen on first time
     if (isLoading && !dashboardData) {
       return (
@@ -2864,117 +2990,215 @@ export default function SMDashboard() {
           const totalClaims = dashboardData.summary?.totalClaims || 0
           
           return (
-            <Card className="border-2 border-orange-200 bg-gradient-to-br from-white to-orange-50/30 shadow-lg">
-              <CardHeader>
-                <div className="flex items-center justify-between">
+        <Card className="border-2 border-orange-200 bg-gradient-to-br from-white to-orange-50/30 shadow-lg">
+  <CardHeader>
+    <div className="flex items-center justify-between">
+      <div className="flex items-center gap-3">
+        <div className="rounded-lg bg-orange-100 p-2">
+          <Shield className="h-5 w-5 text-orange-600" />
+        </div>
+        <div>
+          <CardTitle className="text-xl">Warranty Claims Overview</CardTitle>
+          <CardDescription>Claim types with labour and parts breakdown</CardDescription>
+        </div>
+      </div>
+      {hasPermission("warranty_report") && (
+        <Button
+          onClick={() => router.push("/dashboard/reports/warranty")}
+          className="bg-orange-600 hover:bg-orange-700 text-white"
+        >
+          View Full Report →
+        </Button>
+      )}
+    </div>
+  </CardHeader>
+  <CardContent>
+    <div className="space-y-6">
+      {/* Overall Status Summary - Moved to Top */}
+      <div>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Overall Status Summary</h3>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+          {claimStatusData.map((status: any, idx: number) => {
+            // Determine colors based on status
+            let bgClass = "bg-gray-50 border-gray-200"
+            let textColor = "text-gray-600"
+            let dotColor = "bg-gray-400"
+            
+            switch(status.status?.toLowerCase()) {
+              case 'open':
+                bgClass = "bg-blue-50 border-blue-200"
+                textColor = "text-blue-600"
+                dotColor = "bg-blue-500"
+                break
+              case 'approved':
+                bgClass = "bg-green-50 border-green-200"
+                textColor = "text-green-600"
+                dotColor = "bg-green-500"
+                break
+              case 'rejected':
+                bgClass = "bg-red-50 border-red-200"
+                textColor = "text-red-600"
+                dotColor = "bg-red-500"
+                break
+              case 'pending':
+                bgClass = "bg-yellow-50 border-yellow-200"
+                textColor = "text-yellow-600"
+                dotColor = "bg-yellow-500"
+                break
+              case 'closed':
+                bgClass = "bg-gray-100 border-gray-300"
+                textColor = "text-gray-700"
+                dotColor = "bg-gray-600"
+                break
+            }
+            
+            return (
+              <div key={idx} className={`p-3 rounded-lg border ${bgClass} hover:shadow-sm transition-all`}>
+                <div className="flex flex-col items-center justify-center text-center">
+                  <div className={`w-10 h-10 rounded-full ${dotColor.replace('bg-', 'bg-')} flex items-center justify-center mb-2`}>
+                    <span className="text-white font-bold text-lg">{status.count}</span>
+                  </div>
+                  <p className={`text-sm font-semibold ${textColor}`}>{status.status}</p>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Claim Types with Status Breakdown */}
+      <div>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Claim Types & Status</h3>
+        <div className="space-y-4">
+          {claimTypeData.map((claimType: any, idx: number) => {
+            // Get status breakdown specific to this claim type
+            const typeSpecificStatus = claimTypeStatusData.filter(
+              (item: any) => item.claimType === claimType.type
+            )
+            
+            // Calculate total as labour + part
+            const totalAmount = (claimType.labourAmount || 0) + (claimType.partAmount || 0)
+            
+            return (
+              <div key={idx} className="p-4 rounded-lg bg-white border-2 border-gray-200 hover:border-orange-300 hover:shadow-lg transition-all">
+                <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-3">
-                    <div className="rounded-lg bg-orange-100 p-2">
-                      <Shield className="h-5 w-5 text-orange-600" />
+                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-gradient-to-br from-orange-500 to-orange-600 text-white font-bold text-sm shadow-lg">
+                      {idx + 1}
                     </div>
                     <div>
-                      <CardTitle className="text-xl">Warranty Claims Overview</CardTitle>
-                      <CardDescription>Claim types with labour and parts breakdown</CardDescription>
+                      <span className="text-base font-bold text-gray-900">{claimType.type}</span>
+                      <p className="text-xs text-gray-500">{claimType.count} claims</p>
                     </div>
                   </div>
-                  {hasPermission("warranty_report") && (
-                  <Button
-                    onClick={() => router.push("/dashboard/reports/warranty")}
-                    className="bg-orange-600 hover:bg-orange-700 text-white"
-                  >
-                    View Full Report →
-                  </Button>
-                  )}
+                  <div className="text-right">
+                    <p className="text-lg font-bold text-orange-600">₹{(totalAmount / 100000).toFixed(2)}L</p>
+                    <p className="text-xs text-gray-500">Total</p>
+                  </div>
                 </div>
-              </CardHeader>
-              <CardContent>
-                  <div className="space-y-6">
-                    {/* Claim Types with Status Breakdown */}
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Claim Types & Status</h3>
-                      <div className="space-y-4">
-                        {claimTypeData.map((claimType: any, idx: number) => {
-                          // Get status breakdown specific to this claim type
-                          const typeSpecificStatus = claimTypeStatusData.filter(
-                            (item: any) => item.claimType === claimType.type
-                          )
-                          
-                          // Calculate total as labour + part
-                          const totalAmount = (claimType.labourAmount || 0) + (claimType.partAmount || 0)
-                          
-                          return (
-                            <div key={idx} className="p-4 rounded-lg bg-white border-2 border-gray-200 hover:border-orange-300 hover:shadow-lg transition-all">
-                              <div className="flex items-center justify-between mb-3">
-                                <div className="flex items-center gap-3">
-                                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-gradient-to-br from-orange-500 to-orange-600 text-white font-bold text-sm shadow-lg">
-                                    {idx + 1}
-                                  </div>
-                                  <div>
-                                    <span className="text-base font-bold text-gray-900">{claimType.type}</span>
-                                    <p className="text-xs text-gray-500">{claimType.count} claims</p>
-                                  </div>
-                                </div>
-                                <div className="text-right">
-                                  <p className="text-lg font-bold text-orange-600">₹{(totalAmount / 100000).toFixed(2)}L</p>
-                                  <p className="text-xs text-gray-500">Total</p>
-                                </div>
-                              </div>
-                              
-                              <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-gray-200">
-                                <div className="text-center p-3 rounded bg-blue-50">
-                                  <p className="text-xs text-gray-600 mb-1">Labour</p>
-                                  <p className="text-sm font-bold text-blue-600">₹{((claimType.labourAmount || 0) / 100000).toFixed(2)}L</p>
-                                </div>
-                                <div className="text-center p-3 rounded bg-green-50">
-                                  <p className="text-xs text-gray-600 mb-1">Part</p>
-                                  <p className="text-sm font-bold text-green-600">₹{((claimType.partAmount || 0) / 100000).toFixed(2)}L</p>
-                                </div>
-                              </div>
+                
+                <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-gray-200">
+                  <div className="text-center p-3 rounded-lg bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200">
+                    <p className="text-xs text-gray-600 mb-1">Labour</p>
+                    <p className="text-sm font-bold text-blue-700">₹{((claimType.labourAmount || 0) / 100000).toFixed(2)}L</p>
+                  </div>
+                  <div className="text-center p-3 rounded-lg bg-gradient-to-br from-green-50 to-green-100 border border-green-200">
+                    <p className="text-xs text-gray-600 mb-1">Part</p>
+                    <p className="text-sm font-bold text-green-700">₹{((claimType.partAmount || 0) / 100000).toFixed(2)}L</p>
+                  </div>
+                </div>
 
-                              {/* Status breakdown specific to this claim type */}
-                              <div className="mt-4 pt-3 border-t border-gray-100">
-                                <p className="text-sm font-medium text-gray-700 mb-2">Status Distribution:</p>
-                                <div className="flex flex-wrap gap-2">
-                                  {typeSpecificStatus.length > 0 ? (
-                                    typeSpecificStatus.map((status: any, statusIdx: number) => (
-                                      <div key={statusIdx} className="flex items-center gap-2 px-3 py-1 rounded-full bg-purple-100 border border-purple-200">
-                                        <span className="text-xs font-medium text-purple-700">{status.claimStatus}</span>
-                                        <span className="text-xs text-purple-600">({status.count})</span>
-                                      </div>
-                                    ))
-                                  ) : (
-                                    <span className="text-xs text-gray-500">No status data available</span>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
+                {/* Improved Status Distribution Section */}
+                {typeSpecificStatus.length > 0 && (
+                  <div className="mt-4 pt-3 border-t border-gray-200">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-sm font-semibold text-gray-900">Status Distribution</p>
+                      <p className="text-xs text-gray-500">{typeSpecificStatus.reduce((acc, curr) => acc + (curr.count || 0), 0)} total</p>
                     </div>
-
-                    {/* Overall Status Summary */}
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Overall Status Summary</h3>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {claimStatusData.map((status: any, idx: number) => (
-                          <div key={idx} className="p-3 rounded-lg bg-gradient-to-r from-purple-50 to-white border border-purple-200">
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <p className="text-sm font-bold text-gray-900">{status.status}</p>
-                                <p className="text-xs text-gray-600">{status.count} claims</p>
-                              </div>
+                    <div className="space-y-2">
+                      {typeSpecificStatus.map((status: any, statusIdx: number) => {
+                        // Determine status color
+                        let statusColor = {
+                          bg: "bg-gray-100",
+                          text: "text-gray-700",
+                          border: "border-gray-200",
+                          dot: "bg-gray-500"
+                        }
+                        
+                        switch(status.claimStatus?.toLowerCase()) {
+                          case 'open':
+                            statusColor = {
+                              bg: "bg-blue-50",
+                              text: "text-blue-700",
+                              border: "border-blue-200",
+                              dot: "bg-blue-500"
+                            }
+                            break
+                          case 'approved':
+                            statusColor = {
+                              bg: "bg-green-50",
+                              text: "text-green-700",
+                              border: "border-green-200",
+                              dot: "bg-green-500"
+                            }
+                            break
+                          case 'rejected':
+                            statusColor = {
+                              bg: "bg-red-50",
+                              text: "text-red-700",
+                              border: "border-red-200",
+                              dot: "bg-red-500"
+                            }
+                            break
+                          case 'pending':
+                            statusColor = {
+                              bg: "bg-yellow-50",
+                              text: "text-yellow-700",
+                              border: "border-yellow-200",
+                              dot: "bg-yellow-500"
+                            }
+                            break
+                        }
+                        
+                        const statusAmount = (status.totalAmount || 0) / 100000
+                        
+                        return (
+                          <div 
+                            key={statusIdx} 
+                            className={`flex items-center justify-between px-4 py-2 rounded-lg border ${statusColor.border} ${statusColor.bg} hover:shadow-sm transition-all`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className={`w-2 h-2 rounded-full ${statusColor.dot}`} />
+                              <span className={`text-sm font-medium ${statusColor.text}`}>
+                                {status.claimStatus}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-4">
                               <div className="text-right">
-                                <p className="text-sm font-bold text-purple-600">₹{((status.totalAmount || 0) / 100000).toFixed(2)}L</p>
-                                <p className="text-xs text-gray-500">L: ₹{((status.labourAmount || 0) / 100000).toFixed(2)}L | P: ₹{((status.partAmount || 0) / 100000).toFixed(2)}L</p>
+                                <span className="text-sm font-bold text-gray-900">
+                                  {status.count}
+                                </span>
+                                {statusAmount > 0 && (
+                                  <p className="text-xs text-gray-600">
+                                    ₹{statusAmount.toFixed(2)}L
+                                  </p>
+                                )}
                               </div>
                             </div>
                           </div>
-                        ))}
-                      </div>
+                        )
+                      })}
                     </div>
                   </div>
-              </CardContent>
-            </Card>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  </CardContent>
+</Card>
           )
         })()}
         
@@ -3037,192 +3261,310 @@ export default function SMDashboard() {
              
 
               {/* VIN Matching Summary Card - Simplified */}
-              <Card className="border-2 border-blue-200 bg-gradient-to-br from-white to-blue-50/30 shadow-lg">
-                <CardHeader>
-                  <div className="flex items-center gap-3">
-                    <div className="rounded-lg bg-blue-100 p-2">
-                      <Car className="h-5 w-5 text-blue-600" />
-                    </div>
-                    <div>
-                      <h2 className="text-xl font-bold text-blue-900">VIN Matching Summary</h2>
-                      <p className="text-sm text-blue-700">Service booking analysis with VIN matching status</p>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    <div className="bg-white p-4 rounded-lg border border-blue-200 shadow-sm">
-                      <div className="text-center">
-                        <p className="text-2xl font-bold text-blue-600">{vinMatching.totalBookings || 0}</p>
-                        <p className="text-sm text-blue-700 font-medium">Total Bookings</p>
-                      </div>
-                    </div>
-                    <div className="bg-green-50 p-4 rounded-lg border border-green-200 shadow-sm">
-                      <div className="text-center">
-                        <p className="text-2xl font-bold text-green-600">{vinMatching.matchedVINs || 0}</p>
-                        <p className="text-sm text-green-700 font-medium">Converted</p>
-                      </div>
-                    </div>
-                    <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 shadow-sm">
-                      <div className="text-center">
-                        <p className="text-2xl font-bold text-blue-600">
-                          {vinMatching.totalBookings > 0 ? Math.round((vinMatching.matchedVINs / vinMatching.totalBookings) * 100) : 0}%
-                        </p>
-                        <p className="text-sm text-blue-700 font-medium">Conversion Rate</p>
-                        <p className="text-xs text-gray-500">Overall</p>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+             <Card className="border-2 border-blue-200 bg-gradient-to-br from-white to-blue-50/30 shadow-lg">
+  <CardHeader>
+    <div className="flex items-center gap-3">
+      <div className="rounded-lg bg-blue-100 p-2">
+        <Car className="h-5 w-5 text-blue-600" />
+      </div>
+      <div>
+        <h2 className="text-xl font-bold text-blue-900">VIN Matching Summary</h2>
+        <p className="text-sm text-blue-700">Service booking analysis with VIN matching status</p>
+      </div>
+    </div>
+  </CardHeader>
+  <CardContent>
+    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+      <div className="bg-white p-4 rounded-lg border border-blue-200 shadow-sm">
+        <div className="text-center">
+          <p className="text-2xl font-bold text-blue-600">{vinMatching.totalBookings || 0}</p>
+          <p className="text-sm text-blue-700 font-medium">Total Bookings</p>
+        </div>
+      </div>
+      <div className="bg-green-50 p-4 rounded-lg border border-green-200 shadow-sm">
+        <div className="text-center">
+          <p className="text-2xl font-bold text-green-600">{vinMatching.matchedVINs || 0}</p>
+          <p className="text-sm text-green-700 font-medium">Converted</p>
+        </div>
+      </div>
+      <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 shadow-sm">
+        <div className="text-center">
+          <p className="text-2xl font-bold text-blue-600">
+            {vinMatching.totalBookings > 0 ? Math.round((vinMatching.matchedVINs / vinMatching.totalBookings) * 100) : 0}%
+          </p>
+          <p className="text-sm text-blue-700 font-medium">Conversion Rate</p>
+          <p className="text-xs text-gray-500">Overall</p>
+        </div>
+      </div>
+    </div>
+  </CardContent>
+</Card>
 
-              {/* Advisor Work Type Performance - Individual Filters */}
-              <Card className="border-2 border-emerald-200 bg-gradient-to-br from-white to-emerald-50/30 shadow-lg">
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="rounded-lg bg-emerald-100 p-2">
-                        <Users className="h-5 w-5 text-emerald-600" />
+{/* Advisor Work Type Performance - Individual Filters */}
+<Card className="border-2 border-emerald-200 bg-gradient-to-br from-white to-emerald-50/30 shadow-lg">
+  <CardHeader>
+    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+      <div className="flex items-center gap-3">
+        <div className="rounded-lg bg-emerald-100 p-2">
+          <Users className="h-5 w-5 text-emerald-600" />
+        </div>
+        <div>
+          <h2 className="text-xl font-bold text-emerald-900">Advisor Work Type Performance</h2>
+          <p className="text-sm text-emerald-700">Filter bookings by B.T Date & Time and view work type details</p>
+        </div>
+      </div>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+        <div className="flex items-center gap-2">
+          <label htmlFor="advisor-date-filter" className="text-sm font-medium text-gray-700 whitespace-nowrap">
+            B.T Date & Time Filter:
+          </label>
+          <input
+            id="advisor-date-filter"
+            type="date"
+            value={dateFilter}
+            onChange={(e) => setDateFilter(e.target.value)}
+            className="px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          />
+        </div>
+        {dateFilter && (
+          <Button
+            onClick={() => setDateFilter('')}
+            variant="outline"
+            size="sm"
+            className="text-xs whitespace-nowrap"
+          >
+            Clear Filter
+          </Button>
+        )}
+      </div>
+    </div>
+  </CardHeader>
+  <CardContent>
+    <div className="space-y-4">
+      {Object.entries(advisorGroups).map(([advisor, workTypes]) => {
+        const cardKey = advisor
+        const isExpanded = expandedCards[cardKey] || false
+        const totalBookings = workTypes.reduce((sum, wt) => sum + wt.count, 0)
+        const totalConverted = workTypes.reduce((sum, wt) => sum + wt.converted, 0)
+        const conversionRate = totalBookings > 0 ? Math.round((totalConverted / totalBookings) * 100) : 0
+        
+        return (
+          <div key={advisor} className="p-4 rounded-lg bg-white border border-gray-200 hover:border-emerald-300 transition-all shadow-sm">
+            {/* Advisor Header - Clickable */}
+            <div 
+              className="cursor-pointer"
+              onClick={() => setExpandedCards(prev => ({ ...prev, [cardKey]: !isExpanded }))}
+            >
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-r from-emerald-100 to-blue-100 flex items-center justify-center mt-1 flex-shrink-0">
+                    <span className="text-lg font-bold text-emerald-700">{advisor.charAt(0)}</span>
+                  </div>
+                  <div>
+                    <p className="font-bold text-gray-900 text-lg">{advisor}</p>
+                    <div className="flex items-center gap-4 mt-2">
+                      <div className="flex items-center gap-2 bg-blue-50 px-3 py-1.5 rounded-full">
+                        <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                        <p className="text-sm font-medium text-blue-700">
+                          {totalBookings} <span className="text-gray-600">bookings</span>
+                        </p>
                       </div>
-                      <div>
-                        <h2 className="text-xl font-bold text-emerald-900">Advisor Work Type Performance</h2>
-                        <p className="text-sm text-emerald-700">Filter bookings by B.T Date & Time and view work type details</p>
+                      <div className="flex items-center gap-2 bg-emerald-50 px-3 py-1.5 rounded-full">
+                        <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                        <p className="text-sm font-medium text-emerald-700">
+                          {conversionRate}% <span className="text-gray-600">conversion</span>
+                        </p>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="flex items-center gap-2">
-                        <label htmlFor="advisor-date-filter" className="text-sm font-medium text-gray-700">
-                          B.T Date & Time Filter:
-                        </label>
-                        <input
-                          id="advisor-date-filter"
-                          type="date"
-                          value={dateFilter}
-                          onChange={(e) => setDateFilter(e.target.value)}
-                          className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                        />
-                        {dateFilter && (
-                          <Button
-                            onClick={() => setDateFilter('')}
-                            variant="outline"
-                            size="sm"
-                            className="text-xs"
-                          >
-                            Clear Filter
-                          </Button>
-                        )}
+                      <div className="flex items-center gap-2 bg-purple-50 px-3 py-1.5 rounded-full">
+                        <div className="w-2 h-2 rounded-full bg-purple-500"></div>
+                        <p className="text-sm font-medium text-purple-700">
+                          {workTypes.length} <span className="text-gray-600">work types</span>
+                        </p>
                       </div>
                     </div>
                   </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {Object.entries(advisorGroups).map(([advisor, workTypes]) => {
-                      const cardKey = advisor
-                      const isExpanded = expandedCards[cardKey] || false
-                      const totalBookings = workTypes.reduce((sum, wt) => sum + wt.count, 0)
-                      const totalConverted = workTypes.reduce((sum, wt) => sum + wt.converted, 0)
-                      const conversionRate = totalBookings > 0 ? Math.round((totalConverted / totalBookings) * 100) : 0
-                      
-                      return (
-                        <div key={advisor} className="p-4 rounded-lg bg-white border border-gray-200 hover:border-emerald-300 transition-all shadow-sm">
-                          {/* Advisor Header - Clickable */}
-                          <div 
-                            className="flex items-center justify-between mb-3 cursor-pointer"
-                            onClick={() => setExpandedCards(prev => ({ ...prev, [cardKey]: !isExpanded }))}
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center">
-                                <span className="text-sm font-bold text-emerald-700">{advisor.charAt(0)}</span>
-                              </div>
-                              <div>
-                                <p className="font-semibold text-gray-900">{advisor}</p>
-                                <p className="text-sm text-blue-600 font-medium">{workTypes.length} Work Types</p>
-                                <p className="text-xs text-gray-500">Total: {totalBookings} bookings • Conversion: {conversionRate}%</p>
-                              </div>
+                </div>
+                
+                <div className="flex items-center gap-4">
+                  <div className="text-right">
+                    <div className="text-2xl font-bold text-emerald-700">{totalBookings}</div>
+                    <p className="text-sm text-gray-500">Total Bookings</p>
+                  </div>
+                  <div className="text-gray-400 text-xl">
+                    {isExpanded ? '▼' : '▶'}
+                  </div>
+                </div>
+              </div>
+              
+              {/* Work Type Summary - Horizontal Row Layout */}
+              {!isExpanded && workTypes.length > 0 && (
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                  <div className="flex flex-wrap gap-3">
+                    {workTypes.map((workType, idx) => (
+                      <div 
+                        key={idx} 
+                        className="flex items-center gap-3 bg-gradient-to-r from-gray-50 to-white p-3 rounded-lg border border-gray-200 hover:border-emerald-200 transition-colors min-w-[200px]"
+                      >
+                        <div className="flex-shrink-0">
+                          <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                            <span className="text-sm font-bold text-blue-700">
+                              {workType.workType.charAt(0)}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-gray-900 truncate">{workType.workType}</p>
+                          <div className="flex items-center gap-3 mt-1">
+                            <div className="flex items-center gap-1">
+                              <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+                              <p className="text-xs font-medium text-gray-700">{workType.count} bookings</p>
                             </div>
-                            <div className="flex items-center gap-3">
-                              <div className="text-right">
-                                <p className="text-xl font-bold text-emerald-700">{totalBookings}</p>
-                                <p className="text-xs text-gray-500">Total Bookings</p>
-                              </div>
-                              <div className="text-gray-400">
-                                {isExpanded ? '▼' : '▶'}
-                              </div>
+                            <div className="flex items-center gap-1">
+                              <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                              <p className="text-xs font-medium text-gray-700">{workType.converted} converted</p>
                             </div>
                           </div>
-                          
-                          {/* Collapsible Work Type Details */}
-                          {isExpanded && (
-                            <div className="mt-4 space-y-4">
-                              {workTypes.map((workType, wtIdx) => (
-                                <div key={wtIdx} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-                                  <div className="flex items-center justify-between mb-3">
-                                    <div>
-                                      <p className="font-medium text-gray-900">{workType.workType}</p>
-                                      <p className="text-xs text-gray-500">{workType.count} bookings • {workType.conversionRate}% conversion</p>
-                                    </div>
-                                    <div className="text-right">
-                                      <p className="text-lg font-bold text-blue-600">{workType.count}</p>
-                                    </div>
-                                  </div>
-                                  
-                                  {/* Status Breakdown for this Work Type */}
-                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                    <div className="bg-green-50 p-3 rounded-lg border border-green-200">
-                                      <div className="text-center">
-                                        <div className="text-lg mb-1">✅</div>
-                                        <p className="text-lg font-bold text-green-600">{workType.converted}</p>
-                                        <p className="text-xs text-green-700 font-medium">Converted</p>
-                                        <p className="text-xs text-gray-500">Status: VIN Matched</p>
-                                      </div>
-                                    </div>
-                                    
-                                    <div className="bg-orange-50 p-3 rounded-lg border border-orange-200">
-                                      <div className="text-center">
-                                        <div className="text-lg mb-1">⏳</div>
-                                        <p className="text-lg font-bold text-orange-600">{workType.processing}</p>
-                                        <p className="text-xs text-orange-700 font-medium">Processing</p>
-                                        <p className="text-xs text-gray-500">Status: Past/Present</p>
-                                      </div>
-                                    </div>
-                                    
-                                    <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
-                                      <div className="text-center">
-                                        <div className="text-lg mb-1">📅</div>
-                                        <p className="text-lg font-bold text-blue-600">{workType.tomorrow}</p>
-                                        <p className="text-xs text-blue-700 font-medium">Tomorrow</p>
-                                        <p className="text-xs text-gray-500">Status: Next Day</p>
-                                      </div>
-                                    </div>
-                                  </div>
-                                  
-                                  {/* Excel Status Breakdown for this Work Type */}
-                                  {workType.excelStatuses && Object.keys(workType.excelStatuses).length > 0 && (
-                                    <div className="mt-3 p-3 bg-white rounded-lg border border-gray-300">
-                                      <h6 className="font-medium text-gray-800 mb-2">📄 Excel Status Breakdown</h6>
-                                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                                        {Object.entries(workType.excelStatuses).map(([status, count], statusIdx) => (
-                                          <div key={statusIdx} className="bg-gray-50 p-2 rounded border border-gray-200">
-                                            <div className="text-center">
-                                              <p className="text-sm font-bold text-gray-700">{count}</p>
-                                              <p className="text-xs text-gray-600">{status}</p>
-                                            </div>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          )}
                         </div>
-                      )
-                    })}
+                        <div className="flex-shrink-0">
+                          <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-bold ${
+                            workType.conversionRate >= 80 ? 'bg-green-100 text-green-800' :
+                            workType.conversionRate >= 60 ? 'bg-yellow-100 text-yellow-800' :
+                            'bg-red-100 text-red-800'
+                          }`}>
+                            {workType.conversionRate}%
+                          </span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                </CardContent>
-              </Card>
+                  
+                  {workTypes.length > 4 && (
+                    <div className="mt-3 text-center">
+                      <p className="text-sm text-gray-500">
+                        <span className="font-medium">+{workTypes.length - 4} more</span> work types available
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            
+            {/* Collapsible Work Type Details */}
+            {isExpanded && (
+              <div className="mt-4 space-y-4 pt-4 border-t border-gray-200">
+                <h3 className="text-lg font-bold text-gray-800 mb-2">📋 Detailed Work Type Breakdown</h3>
+                {workTypes.map((workType, wtIdx) => (
+                  <div key={wtIdx} className="p-4 bg-gradient-to-r from-gray-50 to-white rounded-xl border border-gray-200">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-lg bg-blue-100 flex items-center justify-center">
+                          <span className="text-lg font-bold text-blue-700">
+                            {workType.workType.charAt(0)}
+                          </span>
+                        </div>
+                        <div>
+                          <p className="font-bold text-gray-900 text-lg">{workType.workType}</p>
+                          <div className="flex items-center gap-4 mt-2">
+                            <div className="flex items-center gap-2">
+                              <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                              <p className="text-sm font-medium text-gray-700">
+                                {workType.count} total bookings
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                              <p className="text-sm font-medium text-gray-700">
+                                {workType.converted} converted ({workType.conversionRate}%)
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className={`text-2xl font-bold ${
+                          workType.conversionRate >= 80 ? 'text-green-600' :
+                          workType.conversionRate >= 60 ? 'text-yellow-600' :
+                          'text-red-600'
+                        }`}>
+                          {workType.conversionRate}%
+                        </div>
+                        <p className="text-sm text-gray-500">Conversion Rate</p>
+                      </div>
+                    </div>
+                    
+                    {/* Status Breakdown for this Work Type */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                      <div className="bg-gradient-to-br from-green-50 to-green-100 p-4 rounded-xl border border-green-200">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-lg bg-green-200 flex items-center justify-center">
+                            <span className="text-lg">✅</span>
+                          </div>
+                          <div>
+                            <p className="text-2xl font-bold text-green-700">{workType.converted}</p>
+                            <p className="text-sm font-medium text-green-800">Converted</p>
+                            <p className="text-xs text-green-600">VIN Matched</p>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="bg-gradient-to-br from-orange-50 to-orange-100 p-4 rounded-xl border border-orange-200">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-lg bg-orange-200 flex items-center justify-center">
+                            <span className="text-lg">⏳</span>
+                          </div>
+                          <div>
+                            <p className="text-2xl font-bold text-orange-700">{workType.processing}</p>
+                            <p className="text-sm font-medium text-orange-800">Processing</p>
+                            <p className="text-xs text-orange-600">Past/Present</p>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-xl border border-blue-200">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-lg bg-blue-200 flex items-center justify-center">
+                            <span className="text-lg">📅</span>
+                          </div>
+                          <div>
+                            <p className="text-2xl font-bold text-blue-700">{workType.tomorrow}</p>
+                            <p className="text-sm font-medium text-blue-800">Tomorrow</p>
+                            <p className="text-xs text-blue-600">Next Day</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Excel Status Breakdown for this Work Type */}
+                    {workType.excelStatuses && Object.keys(workType.excelStatuses).length > 0 && (
+                      <div className="mt-4 p-4 bg-white rounded-xl border border-gray-300">
+                        <div className="flex items-center gap-2 mb-3">
+                          <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center">
+                            <span className="text-sm">📄</span>
+                          </div>
+                          <h6 className="font-bold text-gray-800">Excel Status Breakdown</h6>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                          {Object.entries(workType.excelStatuses).map(([status, count], statusIdx) => (
+                            <div key={statusIdx} className="bg-gray-50 p-3 rounded-lg border border-gray-200 hover:bg-gray-100 transition-colors">
+                              <div className="text-center">
+                                <p className="text-lg font-bold text-gray-800">{count}</p>
+                                <p className="text-sm text-gray-600 truncate">{status}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  </CardContent>
+</Card>
               </div>
             )
         })()}
@@ -3248,7 +3590,9 @@ export default function SMDashboard() {
                   </h1>
                   <p className="text-blue-100 text-sm flex items-center gap-2 mt-0.5">
                     <Gauge className="h-3.5 w-3.5" />
-                    {user?.city} • {user?.name}
+                    {showroomCity && showroomCity.toLowerCase() !== 'com' 
+                      ? `${showroomCity} • ${user?.name}` 
+                      : user?.name || 'Unknown User'}
                     {isLoading && hasData && (
                       <span className="ml-2 flex items-center gap-1 text-xs bg-white/20 px-2 py-1 rounded-full">
                         <Loader2 className="h-3 w-3 animate-spin" />

@@ -5,6 +5,9 @@ import { useAuth } from "@/lib/auth-context"
 import { usePermissions } from "@/hooks/usePermissions"
 import { getRoBillingReports, getServiceBookingReports, getWarrantyReports } from "@/lib/api"
 import { useParams } from "next/navigation"
+import { useAppSelector } from "@/lib/store/hooks"
+import { CityTarget } from "@/lib/store/slices/targetsSlice"
+import { AdvisorAssignment } from "@/lib/store/slices/advisorAssignmentsSlice"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
 function remainingWorkingDaysFromToday(): number {
@@ -27,23 +30,28 @@ export default function AdvisorPage() {
   const { hasPermission } = usePermissions()
   const params = useParams() as { advisor?: string }
   const advisorName = params?.advisor ? decodeURIComponent(params.advisor) : null
-  const [target, setTarget] = useState<any | null>(null)
+  
+  // Get data from RTK store
+  const targets = useAppSelector((state) => state.targets.targets)
+  const assignments = useAppSelector((state) => state.advisorAssignments.assignments)
+  
+  const [target, setTarget] = useState<AdvisorAssignment | CityTarget | null>(null)
   const [achieved, setAchieved] = useState<any | null>(null)
 
   useEffect(() => {
     const load = async () => {
       if (!advisorName || !user?.city) return
 
-  // Load per-advisor assignment from localStorage
-  const raw = localStorage.getItem("advisor_field_targets_v1")
-  const advisorAssignList = raw ? JSON.parse(raw) : []
-  const t = advisorAssignList.find((l: any) => l.advisorName === advisorName && l.city === user.city)
-      if (t) setTarget(t)
-      else {
+      // Load per-advisor assignment from RTK store
+      const assignment = assignments.find(
+        (a: AdvisorAssignment) => a.advisorName === advisorName && a.city === user.city
+      )
+      
+      if (assignment) {
+        setTarget(assignment)
+      } else {
         // fallback: read GM city target and divide equally by advisors in RO Billing
-        const gmRaw = localStorage.getItem("gm_field_targets_v1")
-        const gmList = gmRaw ? JSON.parse(gmRaw) : []
-        const cityTarget = gmList.find((g: any) => g.city === user.city)
+        const cityTarget = targets.find((t: CityTarget) => t.city === user.city)
         if (cityTarget) {
           // estimate advisors count by unique serviceAdvisor in RO billing
           const ro = await getRoBillingReports(user.city)
@@ -59,22 +67,23 @@ export default function AdvisorPage() {
             paidService: per(cityTarget.paidService || 0),
             freeService: per(cityTarget.freeService || 0),
             rr: per(cityTarget.rr || 0),
-          })
+          } as AdvisorAssignment)
         }
       }
 
-      // try reading achieved snapshot from advisor assignments stored by RO Billing distribution
-  const assRaw = localStorage.getItem("advisor_field_targets_v1")
-  const assignsList = assRaw ? JSON.parse(assRaw) : []
-  const my = assignsList.find((l: any) => l.advisorName === advisorName && l.city === user.city)
-      if (my && my.achieved) {
+      // try reading achieved snapshot from advisor assignments in RTK store
+      const myAssignment = assignments.find(
+        (a: AdvisorAssignment) => a.advisorName === advisorName && a.city === user.city
+      )
+      
+      if (myAssignment && myAssignment.achieved) {
         setAchieved({
-          labour: my.achieved.labour || 0,
-          parts: my.achieved.parts || 0,
-          totalVehicles: my.achieved.totalVehicles || 0,
-          paidService: my.achieved.paidService || 0,
-          freeService: my.achieved.freeService || 0,
-          rr: my.achieved.rr || 0,
+          labour: myAssignment.achieved.labour || 0,
+          parts: myAssignment.achieved.parts || 0,
+          totalVehicles: myAssignment.achieved.totalVehicles || 0,
+          paidService: myAssignment.achieved.paidService || 0,
+          freeService: myAssignment.achieved.freeService || 0,
+          rr: myAssignment.achieved.rr || 0,
         })
       } else {
         // fallback: compute values using RO Billing rows for this advisor (metric-specific)
@@ -100,7 +109,7 @@ export default function AdvisorPage() {
       }
     }
     load()
-  }, [advisorName, user?.city])
+  }, [advisorName, user?.city, targets, assignments])
 
   const remainingDays = useMemo(() => remainingWorkingDaysFromToday(), [])
 

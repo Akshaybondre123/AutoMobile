@@ -10,6 +10,8 @@ import excelUploadRoutes from "./routes/excelUploadRoutes.js";
 import serviceManagerRoutes from "./routes/serviceManagerRoutes.js";
 import rbacRoutes from "./routes/rbacRoutes.js";
 import bookingListRoutes from "./routes/bookingListRoutes.js";
+import authRoutes from "./routes/authRoutes.js";
+import adminRoutes from "./routes/adminRoutes.js";
 
 dotenv.config();
 const app = express();
@@ -64,6 +66,8 @@ app.use("/api/excel", excelUploadRoutes);
 app.use("/api/service-manager", serviceManagerRoutes);
 app.use("/api/rbac", rbacRoutes);
 app.use("/api/booking-list", bookingListRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api/admin", adminRoutes);
 
 // Health check endpoint
 app.get("/", (req, res) => {

@@ -21,6 +21,10 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
     }
   }, [user, isLoading, router])
 
+  const handleBackToLogin = () => {
+    router.push("/login")
+  }
+
   // Don't auto-redirect - let individual pages handle their own access control
   // The layout should only block rendering, not redirect
 
@@ -39,9 +43,11 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
   if (!user) return null
 
   // Only block access AFTER permissions have finished loading and confirmed user has NO permissions
-  // Don't block if permissions are still loading or if user is GM
+  // Don't block if permissions are still loading or if user is owner (only fixed role)
   // FIX: Added null/undefined check for permissions before accessing length
-  if (!permissionsLoading && permissions?.length === 0 && user.role !== "general_manager") {
+  // Only block if the user has no permissions and is not the owner role
+  const isOwner = user.role === "owner"
+  if (!permissionsLoading && permissions?.length === 0 && !isOwner) {
     // Only show access denied if we're on a protected dashboard page
     // Allow access to /dashboard/unauthorized page itself
     if (window.location.pathname === "/dashboard/unauthorized") {
@@ -71,9 +77,30 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
           <p className="text-lg text-red-700 mb-6">
             You have no permissions assigned. Access denied.
           </p>
-          <p className="text-sm text-red-600 mb-6">
+          <p className="text-sm text-red-600 mb-8">
             Please contact your administrator to get the appropriate permissions assigned to your role.
           </p>
+          
+          {/* Back to Login Button */}
+          <button
+            onClick={handleBackToLogin}
+            className="inline-flex items-center px-6 py-3 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors duration-200"
+          >
+            <svg 
+              className="w-5 h-5 mr-2" 
+              fill="none" 
+              stroke="currentColor" 
+              viewBox="0 0 24 24"
+            >
+              <path 
+                strokeLinecap="round" 
+                strokeLinejoin="round" 
+                strokeWidth={2} 
+                d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" 
+              />
+            </svg>
+            Back to Login
+          </button>
         </div>
       </div>
     )

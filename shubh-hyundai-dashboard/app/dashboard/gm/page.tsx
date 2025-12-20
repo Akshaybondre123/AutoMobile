@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { FileText, DollarSign, Shield, Calendar, TrendingUp, BarChart3, Loader2, Building2, Filter } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { getApiUrl } from "@/lib/config"
+import { getAllCities } from "@/lib/api"
 
 interface GMDashboardData {
   dataType: string
@@ -42,6 +43,23 @@ export default function GMDashboard() {
   const [dashboardData, setDashboardData] = useState<GMDashboardData | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [availableCities, setAvailableCities] = useState<string[]>([])
+
+  // Fetch cities from database
+  useEffect(() => {
+    const fetchCities = async () => {
+      try {
+        const cities = await getAllCities()
+        if (cities && cities.length > 0) {
+          setAvailableCities(cities)
+          console.log('✅ Cities loaded from database:', cities)
+        }
+      } catch (error) {
+        console.error('❌ Error fetching cities:', error)
+      }
+    }
+    fetchCities()
+  }, [])
 
   const fetchDashboardData = async (city: string) => {
     setIsLoading(true)
@@ -101,6 +119,17 @@ export default function GMDashboard() {
   const renderCityBreakdown = () => {
     if (!dashboardData?.citiesData || selectedCity !== "all") return null
 
+    // Filter citiesData to only show cities that exist in the database
+    const filteredCitiesData = availableCities.length > 0
+      ? Object.fromEntries(
+          Object.entries(dashboardData.citiesData).filter(([city]) => 
+            availableCities.includes(city)
+          )
+        )
+      : dashboardData.citiesData
+
+    if (Object.keys(filteredCitiesData).length === 0) return null
+
     return (
       <Card className="border-gray-200">
         <CardHeader>
@@ -109,7 +138,7 @@ export default function GMDashboard() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {Object.entries(dashboardData.citiesData).map(([city, data]: [string, any]) => {
+            {Object.entries(filteredCitiesData).map(([city, data]: [string, any]) => {
               // Handle the optimized data structure
               const roBillingRevenue = data.ro_billing?.totalRevenue || 0
               const roCount = data.ro_billing?.roCount || 0
@@ -170,9 +199,9 @@ export default function GMDashboard() {
     )
   }
 
-  // ✅ UPDATED: Check permissions OR general_manager role (they assign permissions to others)
+  // ✅ UPDATED: Check permissions OR owner role (owner assigns permissions to others)
   const canAccess = hasPermission('manage_users') || hasPermission('manage_roles') || 
-                   hasPermission('target_report') || user?.role === "general_manager"
+                   hasPermission('target_report') || user?.role === "owner"
   
   if (permissionsLoading) {
     return (
@@ -225,17 +254,24 @@ export default function GMDashboard() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Cities (Overall Statistics)</SelectItem>
-                {dashboardData?.cities?.map((city) => (
-                  <SelectItem key={city} value={city}>
-                    {city}
-                  </SelectItem>
-                )) || 
-                // Fallback: extract cities from citiesData if cities array is not available
-                dashboardData?.citiesData && Object.keys(dashboardData.citiesData).map((city) => (
-                  <SelectItem key={city} value={city}>
-                    {city}
-                  </SelectItem>
-                ))}
+                {/* Prefer database cities, then fallback to API response cities */}
+                {availableCities.length > 0
+                  ? availableCities.map((city) => (
+                      <SelectItem key={city} value={city}>
+                        {city}
+                      </SelectItem>
+                    ))
+                  : dashboardData?.cities?.map((city) => (
+                      <SelectItem key={city} value={city}>
+                        {city}
+                      </SelectItem>
+                    )) || 
+                  // Fallback: extract cities from citiesData if cities array is not available
+                  (dashboardData?.citiesData && Object.keys(dashboardData.citiesData).map((city) => (
+                    <SelectItem key={city} value={city}>
+                      {city}
+                    </SelectItem>
+                  )))}
               </SelectContent>
             </Select>
             {selectedCity !== "all" && (

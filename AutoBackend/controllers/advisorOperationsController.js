@@ -3,6 +3,7 @@ import AdvisorOperations from "../models/AdvisorOperations.js";
 import AdvisorPerformanceSummary from "../models/AdvisorPerformanceSummary.js";
 import ExcelUploadService from "../services/excelUploadService.js";
 import UploadedFileMetaDetails from "../models/UploadedFileMetaDetails.js";
+import { getDefaultOrgId, getDefaultShowroomId } from '../config/defaults.js'
 
 // Helper function to update advisor performance summary
 const updateAdvisorPerformanceSummary = async (advisorName, city, uploadedBy, dataDate, totalMatchedAmount, matchedOperations) => {
@@ -169,8 +170,8 @@ export const uploadAdvisorOperationsWithCases = async (req, res) => {
       uploaded_file_name: req.file.originalname,
       rows_count: processedRows.length,
       uploaded_by: uploadedBy,
-      org_id: req.body.org_id || "674c5b3b8f8a5c2d4e6f7890", // Default org_id
-      showroom_id: req.body.showroom_id || "674c5b3b8f8a5c2d4e6f7891", // Default showroom_id
+      org_id: req.body.org_id || getDefaultOrgId() || process.env.ORG_ID,
+      showroom_id: req.body.showroom_id || getDefaultShowroomId() || process.env.SHOWROOM_ID,
       file_type: "operations_part",
       file_size: req.file.size
     };

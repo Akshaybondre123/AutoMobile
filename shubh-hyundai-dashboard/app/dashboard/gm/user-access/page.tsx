@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Shield, Trash2, UserCircle, Loader2, CheckCircle, XCircle, AlertCircle } from "lucide-react"
+import { Shield, Trash2, UserCircle, Loader2, CheckCircle, XCircle, AlertCircle, X } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
 
 interface Permission {
@@ -62,6 +62,15 @@ export default function UserAccessRoleManagement() {
   const { user } = useAuth()
   const { permissions: userPermissions, hasPermission, debug } = usePermissions()
   
+  // Helper function to check if user is owner (handles formatted role strings like "Owner | CRM | BSM")
+  const isOwner = () => {
+    if (!user?.role) return false
+    const roleStr = String(user.role).toLowerCase().trim()
+    // Check if role contains "owner" (handles "Owner", "owner", "Owner | ...", etc.)
+    const roleParts = roleStr.split('|').map(p => p.trim())
+    return roleParts.some(part => part === 'owner') || roleStr.includes('owner')
+  }
+  
   // Debug permissions on component mount
   useEffect(() => {
     if (user) {
@@ -70,7 +79,7 @@ export default function UserAccessRoleManagement() {
       console.log("- User Permissions:", userPermissions)
       console.log("- Has Manage Users:", hasPermission('manage_users'))
       console.log("- Has Manage Roles:", hasPermission('manage_roles'))
-      console.log("- Has GM Role:", user.role === 'general_manager')
+      // Note: general_manager role is deprecated, using owner role now
       
       // Call debug function
       if (debug) debug()
@@ -153,12 +162,47 @@ export default function UserAccessRoleManagement() {
     setIsLoading(true)
     setError(null)
     try {
-      // Get demo users from auth context
-      const demoUsers = getAllDemoUsers()
-      
       // Get current user's org_id and showroom_id
       const userOrgId = user?.org_id || "shubh_hyundai"
-      const userShowroomId = (user as any)?.showroom_id || "674c5b3b8f8a5c2d4e6f7891"
+      
+      // Fetch showrooms from database to get valid showroom IDs
+      let availableShowrooms: any[] = []
+      let userShowroomId = ""
+      
+      try {
+        const showroomsRes = await fetch(getApiUrl("/api/rbac/showrooms"))
+        if (showroomsRes.ok) {
+          const showroomsData = await showroomsRes.json()
+          availableShowrooms = showroomsData.data || []
+          console.log("✅ Fetched showrooms:", availableShowrooms.length)
+          
+          // Try to match user's showroom_id with showrooms from database
+          const userShowroomIdRaw = (user as any)?.showroom_id
+          if (userShowroomIdRaw) {
+            const extractedId = typeof userShowroomIdRaw === 'string' ? userShowroomIdRaw : String(userShowroomIdRaw)
+            // Check if this showroom_id exists in the Showroom table
+            const matchedShowroom = availableShowrooms.find(s => String(s._id) === extractedId)
+            if (matchedShowroom) {
+              userShowroomId = extractedId
+              console.log("✅ User's showroom_id matched with Showroom table:", userShowroomId, matchedShowroom.showroom_city)
+            }
+          }
+          
+          // If user doesn't have a valid showroom_id, try to get from existing users
+          if (!userShowroomId && availableShowrooms.length > 0) {
+            // For owners, use first available showroom as fallback
+            if (isOwner() && availableShowrooms[0]) {
+              userShowroomId = String(availableShowrooms[0]._id)
+              console.log("⚠️ Owner using first available showroom:", userShowroomId, availableShowrooms[0].showroom_city)
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Could not fetch showrooms, using fallback:", err)
+        // Fallback to user's showroom_id if showrooms API fails
+        userShowroomId = (user as any)?.showroom_id ? String((user as any).showroom_id) : ""
+      }
+      
       setSelectedOrgId(userOrgId)
 
       // Test backend connectivity first
@@ -221,7 +265,6 @@ export default function UserAccessRoleManagement() {
       const rolesData = rolesRes.ok ? await rolesRes.json() : { data: [] }
       const permissionsData = permissionsRes.ok ? await permissionsRes.json() : { data: [] }
 
-      console.log("Demo users:", demoUsers)
       console.log("Fetched roles:", rolesData.data)
       console.log("Fetched permissions (raw):", permissionsData.data)
 
@@ -323,9 +366,9 @@ export default function UserAccessRoleManagement() {
         }
       }
 
-      // Get user roles from new summary API
-      console.log("Fetching user-roles summary...")
-      let mergedUsers = []
+      // Get users from database API (only original users from DB, no demo users)
+      console.log("Fetching users from database...")
+      let dbUsers: User[] = []
       
       try {
         const userRolesSummaryRes = await fetch(getApiUrl("/api/rbac/user-roles-summary"))
@@ -334,62 +377,43 @@ export default function UserAccessRoleManagement() {
           const summaryData = await userRolesSummaryRes.json()
           console.log("User-roles summary:", summaryData.data.summary)
           
-          // Use the users from the API, but merge with demo users for complete list
-          const dbUsers = summaryData.data.allUsers || []
+          // Use ONLY users from the database (original users from DB)
+          const allUsersFromDB = summaryData.data.allUsers || []
           
-          // Create merged list: demo users with their database roles if they exist
-          mergedUsers = demoUsers.map(demoUser => {
-            const dbUser = dbUsers.find((u: any) => u.email === demoUser.email)
-            
-            return {
-              _id: dbUser?._id || demoUser.id,
-              name: dbUser?.name || demoUser.name,
-              email: demoUser.email,
-              phone: dbUser?.phone || "",
-              username: dbUser?.username || demoUser.email.split('@')[0],
-              org_id: dbUser?.org_id || demoUser.org_id || "shubh_hyundai",
-              roles: dbUser?.roles || []
-            }
-          })
+          // Map database users to the User interface format
+          dbUsers = allUsersFromDB.map((dbUser: any) => ({
+            _id: dbUser._id,
+            name: dbUser.name || dbUser.email?.split('@')[0] || 'Unknown',
+            email: dbUser.email,
+            phone: dbUser.phone || "",
+            username: dbUser.username || dbUser.email?.split('@')[0] || "",
+            org_id: dbUser.org_id || "shubh_hyundai",
+            roles: dbUser.roles || []
+          }))
           
-          console.log(`Merged ${mergedUsers.length} users, ${mergedUsers.filter(u => u.roles.length > 0).length} have roles`)
+          console.log(`✅ Loaded ${dbUsers.length} users from database, ${dbUsers.filter(u => u.roles && u.roles.length > 0).length} have roles`)
           
           // Debug: Log each user's roles
-          mergedUsers.forEach(user => {
+          dbUsers.forEach(user => {
             if (user.roles && user.roles.length > 0) {
               console.log(`✅ User ${user.name} (${user.email}) has roles:`, user.roles.map((r: Role) => r.name))
             } else {
-              console.log(`❌ User ${user.name} (${user.email}) has no roles`)
+              console.log(`ℹ️ User ${user.name} (${user.email}) has no roles`)
             }
           })
           
         } else {
-          console.log("User-roles summary API failed, using demo users only")
-          // Fallback to demo users without roles
-          mergedUsers = demoUsers.map(demoUser => ({
-            _id: demoUser.id,
-            name: demoUser.name,
-            email: demoUser.email,
-            phone: "",
-            username: demoUser.email.split('@')[0],
-            org_id: demoUser.org_id || "shubh_hyundai",
-            roles: []
-          }))
+          console.error("User-roles summary API failed:", userRolesSummaryRes.status)
+          dbUsers = []
         }
         
       } catch (err) {
-        console.error("Error fetching user-roles summary:", err)
-        // Fallback to demo users without roles
-        mergedUsers = demoUsers.map(demoUser => ({
-          _id: demoUser.id,
-          name: demoUser.name,
-          email: demoUser.email,
-          phone: "",
-          username: demoUser.email.split('@')[0],
-          org_id: demoUser.org_id || "shubh_hyundai",
-          roles: []
-        }))
+        console.error("Error fetching users from database:", err)
+        dbUsers = []
       }
+      
+      // Use database users only (no demo users)
+      const mergedUsers = dbUsers
 
       // Store all roles for dropdown and show all roles with permissions in Available Roles
       const allRolesData = rolesData.data || []
@@ -408,10 +432,13 @@ export default function UserAccessRoleManagement() {
         permissions: []
       }))
       
-      // Show all roles that have permissions + default roles
+      // Show all roles from database (with or without permissions) + default roles that don't exist yet
+      // This ensures roles assigned to users are visible even if they don't have permissions configured yet
       const rolesToShow = [
-        ...allRolesData.filter((role: Role) => role.permissions && role.permissions.length > 0),
-        ...defaultRolesToShow
+        ...allRolesData, // Show all roles from database (including those without permissions)
+        ...defaultRolesToShow.filter(defaultRole => 
+          !allRolesData.some((role: Role) => role.name === defaultRole.name)
+        ) // Only show default roles that don't exist in database
       ]
 
       console.log("All roles for dropdown:", allRolesData)
@@ -457,10 +484,82 @@ export default function UserAccessRoleManagement() {
     }
 
     try {
+      // Determine showroom_id to use for role creation
+      let showroomIdToUse = ""
+      
+      // 1. Try from current user object
+      if (!showroomIdToUse) {
+        const userShowroomIdRaw = (user as any)?.showroom_id
+        if (userShowroomIdRaw) {
+          const extractedId = typeof userShowroomIdRaw === 'string' ? userShowroomIdRaw : String(userShowroomIdRaw)
+          if (extractedId && extractedId !== "null" && extractedId !== "undefined" && extractedId !== "") {
+            showroomIdToUse = extractedId
+            console.log("✅ Using showroom_id from user object:", showroomIdToUse)
+          }
+        }
+      }
+      
+      // 2. Try to get from existing roles
+      if (!showroomIdToUse && roles.length > 0) {
+        for (const role of roles) {
+          if ((role as any).showroom_id) {
+            const roleShowroomId = String((role as any).showroom_id)
+            if (roleShowroomId && roleShowroomId !== "null" && roleShowroomId !== "undefined" && roleShowroomId !== "") {
+              showroomIdToUse = roleShowroomId
+              console.log("✅ Found showroom_id from existing role:", showroomIdToUse)
+              break
+            }
+          }
+        }
+      }
+      
+      // 3. Try to get from existing permissions
+      if (!showroomIdToUse && permissions.length > 0) {
+        for (const perm of permissions) {
+          if ((perm as any).showroom_id) {
+            const permShowroomId = String((perm as any).showroom_id)
+            if (permShowroomId && permShowroomId !== "null" && permShowroomId !== "undefined" && permShowroomId !== "") {
+              showroomIdToUse = permShowroomId
+              console.log("✅ Found showroom_id from existing permission:", showroomIdToUse)
+              break
+            }
+          }
+        }
+      }
+      
+      // 4. Try to fetch showrooms from database and use first available showroom_id
+      if (!showroomIdToUse) {
+        try {
+          const showroomsRes = await fetch(getApiUrl("/api/rbac/showrooms"))
+          if (showroomsRes.ok) {
+            const showroomsData = await showroomsRes.json()
+            const availableShowrooms = showroomsData.data || []
+            if (availableShowrooms.length > 0) {
+              // Use first available showroom from database
+              showroomIdToUse = String(availableShowrooms[0]._id)
+              console.log("✅ Using showroom_id from Showroom table:", showroomIdToUse, availableShowrooms[0].showroom_city)
+            }
+          }
+        } catch (err) {
+          console.warn("Could not fetch showrooms:", err)
+        }
+      }
+
+      // Final check - must have a valid showroom_id
+      if (!showroomIdToUse || showroomIdToUse === "" || showroomIdToUse === "null" || showroomIdToUse === "undefined") {
+        const errorMsg = isOwner() 
+          ? 'Showroom ID is required to create roles. As an owner, please ensure at least one user in the system has a showroom_id assigned, or contact your administrator to set up a showroom.'
+          : 'Showroom ID is required to create roles. Please ensure your user account has a showroom_id assigned, or contact your administrator.'
+        showNotification('error', 'Showroom ID Required', errorMsg)
+        console.error("❌ No valid showroom_id found. Cannot create role.")
+        return
+      }
+
       console.log("Configuring role:", {
         name: selectedPredefinedRole,
         desc: newRoleDescription || `${selectedPredefinedRole} role with configured permissions`,
-        permissions: selectedPermissions
+        permissions: selectedPermissions,
+        showroom_id: showroomIdToUse
       })
 
       let roleId
@@ -473,8 +572,8 @@ export default function UserAccessRoleManagement() {
         // Note: Role description update not supported by current API
         // Only permissions will be updated
       } else {
-        // Check if role already exists (for new role creation)
-        const existingRolesResponse = await fetch(getApiUrl("/api/rbac/roles"))
+        // Check if role already exists (for new role creation) - need to use showroom_id
+        const existingRolesResponse = await fetch(getApiUrl(`/api/rbac/roles?showroom_id=${encodeURIComponent(showroomIdToUse)}`))
         let existingRole = null
         
         if (existingRolesResponse.ok) {
@@ -487,15 +586,16 @@ export default function UserAccessRoleManagement() {
           console.log("Role already exists:", existingRole._id)
           roleId = existingRole._id
         } else {
-          // Create new role first (without permissions)
-          console.log("Creating new role")
+          // Create new role first (without permissions, but with showroom_id)
+          console.log("Creating new role with showroom_id:", showroomIdToUse)
           const roleResponse = await fetch(getApiUrl("/api/rbac/roles"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               name: selectedPredefinedRole,
               desc: newRoleDescription || `${selectedPredefinedRole} role with configured permissions`,
-              permissions: [] // No permissions in role creation
+              permissions: [], // No permissions in role creation
+              showroom_id: showroomIdToUse
             })
           })
 
@@ -557,32 +657,11 @@ export default function UserAccessRoleManagement() {
       console.log("Permissions assigned successfully")
       console.log(`Assigned ${selectedPermissions.length} permissions to role ${selectedPredefinedRole}`)
 
-      // Refresh roles list without full page reload
-      const rolesRes = await fetch(getApiUrl("/api/rbac/roles"))
-      if (rolesRes.ok) {
-        const rolesData = await rolesRes.json()
-        const allRolesData = rolesData.data || []
-        
-        // Update both all roles and display roles
-        setAllRoles(allRolesData)
-        
-        const defaultRolesToShow = PREDEFINED_ROLES
-          .filter(predefinedRole => !allRolesData.some((role: Role) => role.name === predefinedRole.value))
-          .map(role => ({
-            _id: `default_${role.key}`,
-            name: role.value,
-            desc: `${role.value} role (not configured yet)`,
-            permissions: []
-          }))
-        
-        const rolesToShow = [
-          ...allRolesData.filter((role: Role) => role.permissions && role.permissions.length > 0),
-          ...defaultRolesToShow
-        ]
-        
-        setRoles(rolesToShow)
-      }
-      
+      // Store role name and editing state before resetting form
+      const roleName = selectedPredefinedRole
+      const wasEditing = !!editingRole
+      const permissionsCount = selectedPermissions.length
+
       // Reset form
       setNewRoleDescription("")
       setSelectedPermissions([])
@@ -590,7 +669,10 @@ export default function UserAccessRoleManagement() {
       setEditingRole(null)
       setIsAddRoleOpen(false)
       
-      showNotification('success', 'Role Configured Successfully', `Role "${selectedPredefinedRole}" ${editingRole ? 'updated' : 'configured'} successfully with ${selectedPermissions.length} permissions! All users with this role will automatically get these permissions.`)
+      // Refresh all data to show updated roles and user assignments automatically
+      await fetchAllData()
+      
+      showNotification('success', 'Role Configured Successfully', `Role "${roleName}" ${wasEditing ? 'updated' : 'configured'} successfully with ${permissionsCount} permissions! All users with this role will automatically get these permissions.`)
     } catch (err: any) {
       console.error("Error configuring role:", err)
       showNotification('error', 'Configuration Failed', err.message || "Failed to configure role. Please try again.")
@@ -617,65 +699,9 @@ export default function UserAccessRoleManagement() {
         throw new Error("Failed to delete role")
       }
 
-      // Update roles without full page reload
-      const rolesRes = await fetch(getApiUrl("/api/rbac/roles"))
-      if (rolesRes.ok) {
-        const rolesData = await rolesRes.json()
-        const allRolesData = rolesData.data || []
-        
-        setAllRoles(allRolesData)
-        
-        const defaultRolesToShow = PREDEFINED_ROLES
-          .filter(predefinedRole => !allRolesData.some((role: Role) => role.name === predefinedRole.value))
-          .map(role => ({
-            _id: `default_${role.key}`,
-            name: role.value,
-            desc: `${role.value} role (not configured yet)`,
-            permissions: []
-          }))
-        
-        const rolesToShow = [
-          ...allRolesData.filter((role: Role) => role.permissions && role.permissions.length > 0),
-          ...defaultRolesToShow
-        ]
-        
-        setRoles(rolesToShow)
-      }
-      
-      // Refresh user roles
-      const demoUsers = getAllDemoUsers()
-      const mergedUsers = await Promise.all(demoUsers.map(async (demoUser) => {
-        try {
-          const userRolesRes = await fetch(getApiUrl(`/api/rbac/users/email/${encodeURIComponent(demoUser.email)}/roles`))
-          let userRoles = []
-          if (userRolesRes.ok) {
-            const userRolesData = await userRolesRes.json()
-            userRoles = userRolesData.data || []
-          }
-          
-          return {
-            _id: demoUser.id,
-            name: demoUser.name,
-            email: demoUser.email,
-            phone: "",
-            username: demoUser.email.split('@')[0],
-            org_id: demoUser.org_id || "shubh_hyundai",
-            roles: userRoles
-          }
-        } catch (err) {
-          return {
-            _id: demoUser.id,
-            name: demoUser.name,
-            email: demoUser.email,
-            phone: "",
-            username: demoUser.email.split('@')[0],
-            org_id: demoUser.org_id || "shubh_hyundai",
-            roles: []
-          }
-        }
-      }))
-      
-      setUsers(mergedUsers)
+      // Refresh all data to show updated roles and user assignments automatically
+      await fetchAllData()
+
       showNotification('success', 'Role Deleted Successfully', `Role "${roleName}" deleted successfully! Users are preserved but no longer have this role.`)
     } catch (err) {
       console.error("Error deleting role:", err)
@@ -690,6 +716,61 @@ export default function UserAccessRoleManagement() {
     setDeleteConfirmation({ show: false, roleId: '', roleName: '' })
   }
 
+  // Remove role from user confirmation state
+  const [removeRoleConfirmation, setRemoveRoleConfirmation] = useState<{
+    show: boolean
+    userId: string
+    userName: string
+    roleId: string
+    roleName: string
+  }>({
+    show: false,
+    userId: '',
+    userName: '',
+    roleId: '',
+    roleName: ''
+  })
+
+  const handleRemoveRoleFromUser = (userId: string, userName: string, roleId: string, roleName: string) => {
+    setRemoveRoleConfirmation({
+      show: true,
+      userId,
+      userName,
+      roleId,
+      roleName
+    })
+  }
+
+  const confirmRemoveRoleFromUser = async () => {
+    const { userId, roleId, userName, roleName } = removeRoleConfirmation
+
+    try {
+      const response = await fetch(getApiUrl(`/api/rbac/user-roles/${userId}/${roleId}`), {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" }
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || "Failed to remove role from user")
+      }
+
+      // Refresh data after removal
+      await fetchAllData()
+
+      showNotification('success', 'Role Removed Successfully', `Role "${roleName}" removed from ${userName}!`)
+    } catch (err: any) {
+      console.error("Error removing role from user:", err)
+      showNotification('error', 'Remove Failed', err.message || "Failed to remove role from user. Please try again.")
+    } finally {
+      setRemoveRoleConfirmation({ show: false, userId: '', userName: '', roleId: '', roleName: '' })
+    }
+  }
+
+  const cancelRemoveRoleFromUser = () => {
+    setRemoveRoleConfirmation({ show: false, userId: '', userName: '', roleId: '', roleName: '' })
+  }
+
   const handleAssignRoleToUser = async () => {
     if (!selectedUser || !selectedRole) {
       showNotification('warning', 'Selection Required', 'Please select both user and role')
@@ -697,7 +778,7 @@ export default function UserAccessRoleManagement() {
     }
 
     try {
-      // Find the selected user from demo users
+      // Find the selected user from database users
       const selectedUserData = users.find(u => u._id === selectedUser)
       if (!selectedUserData) {
         throw new Error("Selected user not found")
@@ -749,36 +830,99 @@ export default function UserAccessRoleManagement() {
       // First, try to find the role in allRoles (which contains actual database roles)
       role = allRoles.find(r => r.name === selectedRole)
       
+      // If still not found, create it
       if (!role) {
-        // Try to fetch all roles again to see if it exists in DB
-        const allRolesResponse = await fetch(getApiUrl("/api/rbac/roles"))
-        if (allRolesResponse.ok) {
-          const allRolesData = await allRolesResponse.json()
-          role = allRolesData.data.find((r: Role) => r.name === selectedRole)
+        // Determine showroom_id to use for role creation (same logic as handleAddRole)
+        let showroomIdToUse = ""
+        
+        // 1. Try from current user object
+        if (!showroomIdToUse) {
+          const userShowroomIdRaw = (user as any)?.showroom_id
+          if (userShowroomIdRaw) {
+            const extractedId = typeof userShowroomIdRaw === 'string' ? userShowroomIdRaw : String(userShowroomIdRaw)
+            if (extractedId && extractedId !== "null" && extractedId !== "undefined" && extractedId !== "") {
+              showroomIdToUse = extractedId
+              console.log("✅ Using showroom_id from user object:", showroomIdToUse)
+            }
+          }
         }
         
-        // If still not found, create it
-        if (!role) {
-          console.log(`Creating new role: ${selectedRole}`)
-          const createRoleResponse = await fetch(getApiUrl("/api/rbac/roles"), {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              name: selectedRole,
-              desc: `${selectedRole} role (permissions to be configured)`,
-              permissions: []
-            })
-          })
-
-          if (createRoleResponse.ok) {
-            const roleData = await createRoleResponse.json()
-            role = roleData.data
-            console.log(`Role created successfully:`, role)
-          } else {
-            const errorData = await createRoleResponse.json()
-            console.error("Role creation error:", errorData)
-            throw new Error(errorData.message || "Failed to create role")
+        // 2. Try to get from existing roles
+        if (!showroomIdToUse && allRoles.length > 0) {
+          for (const existingRole of allRoles) {
+            if ((existingRole as any).showroom_id) {
+              const roleShowroomId = String((existingRole as any).showroom_id)
+              if (roleShowroomId && roleShowroomId !== "null" && roleShowroomId !== "undefined" && roleShowroomId !== "") {
+                showroomIdToUse = roleShowroomId
+                console.log("✅ Found showroom_id from existing role:", showroomIdToUse)
+                break
+              }
+            }
           }
+        }
+        
+        // 3. Try to get from existing permissions
+        if (!showroomIdToUse && permissions.length > 0) {
+          for (const perm of permissions) {
+            if ((perm as any).showroom_id) {
+              const permShowroomId = String((perm as any).showroom_id)
+              if (permShowroomId && permShowroomId !== "null" && permShowroomId !== "undefined" && permShowroomId !== "") {
+                showroomIdToUse = permShowroomId
+                console.log("✅ Found showroom_id from existing permission:", showroomIdToUse)
+                break
+              }
+            }
+          }
+        }
+        
+        // 4. Try to fetch showrooms from database and use first available showroom_id
+        if (!showroomIdToUse) {
+          try {
+            const showroomsRes = await fetch(getApiUrl("/api/rbac/showrooms"))
+            if (showroomsRes.ok) {
+              const showroomsData = await showroomsRes.json()
+              const availableShowrooms = showroomsData.data || []
+              if (availableShowrooms.length > 0) {
+                // Use first available showroom from database
+                showroomIdToUse = String(availableShowrooms[0]._id)
+                console.log("✅ Using showroom_id from Showroom table:", showroomIdToUse, availableShowrooms[0].showroom_city)
+              }
+            }
+          } catch (err) {
+            console.warn("Could not fetch showrooms:", err)
+          }
+        }
+        
+        // Final check - must have a valid showroom_id
+        if (!showroomIdToUse || showroomIdToUse === "" || showroomIdToUse === "null" || showroomIdToUse === "undefined") {
+          const errorMsg = isOwner()
+            ? 'Showroom ID is required to create roles. As an owner, please ensure at least one user in the system has a showroom_id assigned, or contact your administrator to set up a showroom.'
+            : 'Showroom ID is required to create roles. Please ensure your user account has a showroom_id assigned, or contact your administrator.'
+          showNotification('error', 'Showroom ID Required', errorMsg)
+          console.error("❌ No valid showroom_id found. Cannot create role.")
+          throw new Error(errorMsg)
+        }
+        
+        console.log(`Creating new role: ${selectedRole} with showroom_id: ${showroomIdToUse}`)
+        const createRoleResponse = await fetch(getApiUrl("/api/rbac/roles"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: selectedRole,
+            desc: `${selectedRole} role (permissions to be configured)`,
+            permissions: [],
+            showroom_id: showroomIdToUse
+          })
+        })
+
+        if (createRoleResponse.ok) {
+          const roleData = await createRoleResponse.json()
+          role = roleData.data
+          console.log(`Role created successfully:`, role)
+        } else {
+          const errorData = await createRoleResponse.json()
+          console.error("Role creation error:", errorData)
+          throw new Error(errorData.message || "Failed to create role")
         }
       }
 
@@ -803,23 +947,55 @@ export default function UserAccessRoleManagement() {
 
       // Refresh data with a small delay to ensure database is updated
       console.log("Role assigned successfully, refreshing data...")
-      setTimeout(async () => {
-        await fetchAllData()
-      }, 1000) // Wait 1 second for database to update
+      
+      // Immediately refresh roles list to show the newly created role if it was created
+      const rolesRes = await fetch(getApiUrl("/api/rbac/roles"))
+      if (rolesRes.ok) {
+        const rolesData = await rolesRes.json()
+        const allRolesData = rolesData.data || []
+        setAllRoles(allRolesData)
+        
+        // Update roles to show - include all roles, not just those with permissions
+        const predefinedRoleNames = PREDEFINED_ROLES.map(r => r.value)
+        const missingRoles = PREDEFINED_ROLES.filter(predefinedRole =>
+          !allRolesData.some((role: Role) => role.name === predefinedRole.value)
+        )
+        const defaultRolesToShow = missingRoles.map(role => ({
+          _id: `default_${role.key}`,
+          name: role.value,
+          desc: `${role.value} role (not configured yet)`,
+          permissions: []
+        }))
+        
+        const rolesToShow = [
+          ...allRolesData, // Show all roles from database
+          ...defaultRolesToShow.filter(defaultRole => 
+            !allRolesData.some((role: Role) => role.name === defaultRole.name)
+          )
+        ]
+        setRoles(rolesToShow)
+      }
       
       // Reset selection
       setSelectedUser("")
       setSelectedRole("")
       
-      showNotification('success', 'Role Assigned Successfully', `Role "${selectedRole}" assigned successfully to ${selectedUserData.name}! Refreshing data...`)
+      showNotification('success', 'Role Assigned Successfully', `Role "${selectedRole}" assigned successfully to ${selectedUserData.name}!`)
+      
+      // Also refresh all data in background
+      setTimeout(async () => {
+        await fetchAllData()
+      }, 500) // Wait 0.5 seconds for database to update
     } catch (err: any) {
       console.error("Error assigning role:", err)
       showNotification('error', 'Assignment Failed', err.message || "Failed to assign role. Please try again.")
     }
   }
 
-  // ✅ UPDATED: Check permissions OR general_manager role (they assign permissions to others)
-  if (!hasPermission('manage_users') && !hasPermission('manage_roles') && user?.role !== "general_manager") {
+  // ✅ UPDATED: Check permissions OR owner role (they assign permissions to others)
+  const userRoleStr = user?.role ? String(user.role).toLowerCase() : ""
+  const isOwnerRole = userRoleStr.includes('owner')
+  if (!hasPermission('manage_users') && !hasPermission('manage_roles') && !isOwnerRole) {
     return (
       <div className="text-center py-12">
         <Shield className="h-12 w-12 text-red-600 mx-auto mb-4" />
@@ -895,22 +1071,35 @@ export default function UserAccessRoleManagement() {
                   <SelectValue placeholder="Choose a user..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {users.length === 0 ? (
-                    <div className="p-2 text-sm text-gray-500 text-center">
-                      No users available
-                    </div>
-                  ) : (
-                    users.map((user) => (
-                      <SelectItem key={user._id} value={user._id}>
-                        {user.name} ({user.email})
-                      </SelectItem>
-                    ))
-                  )}
+                  {(() => {
+                    // Filter out users with "owner" role
+                    const usersWithoutOwner = users.filter(user => {
+                      if (!user.roles || user.roles.length === 0) return true
+                      // Check if user has any role that contains "owner" (case-insensitive)
+                      const hasOwnerRole = user.roles.some((role: Role) => {
+                        const roleName = String(role.name || '').toLowerCase()
+                        return roleName.includes('owner')
+                      })
+                      return !hasOwnerRole
+                    })
+                    
+                    return usersWithoutOwner.length === 0 ? (
+                      <div className="p-2 text-sm text-gray-500 text-center">
+                        No users available
+                      </div>
+                    ) : (
+                      usersWithoutOwner.map((user) => (
+                        <SelectItem key={user._id} value={user._id}>
+                          {user.name} ({user.email})
+                        </SelectItem>
+                      ))
+                    )
+                  })()}
                 </SelectContent>
               </Select>
               {users.length === 0 && (
                 <p className="text-xs text-amber-600 mt-1">
-                  No demo users loaded. Please refresh the page.
+                  No users found in database. Users need to be created in the system first.
                 </p>
               )}
             </div>
@@ -1139,21 +1328,34 @@ export default function UserAccessRoleManagement() {
                     <p className="text-xs font-medium text-gray-700 mb-2">Assigned Users:</p>
                     <div className="space-y-2">
                       {(() => {
-                        const assignedUsers = users.filter(user => 
-                          user.roles && user.roles.length > 0 && 
+                        const assignedUsers = users.filter(user =>
+                          user.roles && user.roles.length > 0 &&
                           user.roles.some(r => r.name === role.name || r.name?.toLowerCase() === role.name?.toLowerCase())
                         )
                         console.log(`Users for role ${role.name}:`, assignedUsers)
                         return assignedUsers.length > 0 ? (
-                          assignedUsers.map((user) => (
-                            <div key={user._id} className="flex items-center gap-2 p-2 bg-gray-50 rounded">
-                              <UserCircle className="h-4 w-4 text-gray-600" />
-                              <div className="flex-1">
-                                <p className="text-sm font-medium">{user.name}</p>
-                                <p className="text-xs text-gray-500">{user.email}</p>
+                          assignedUsers.map((user) => {
+                            // Find the role object from user's roles
+                            const userRole = user.roles.find(r => r.name === role.name || r.name?.toLowerCase() === role.name?.toLowerCase())
+                            return (
+                              <div key={user._id} className="flex items-center gap-2 p-2 bg-gray-50 rounded group">
+                                <UserCircle className="h-4 w-4 text-gray-600" />
+                                <div className="flex-1">
+                                  <p className="text-sm font-medium">{user.name}</p>
+                                  <p className="text-xs text-gray-500">{user.email}</p>
+                                </div>
+                                {userRole && !role._id.startsWith('default_') && (
+                                  <button
+                                    onClick={() => handleRemoveRoleFromUser(user._id, user.name, userRole._id, role.name)}
+                                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-100 rounded-full"
+                                    title={`Remove ${role.name} role from ${user.name}`}
+                                  >
+                                    <X className="h-4 w-4 text-red-600 hover:text-red-700" />
+                                  </button>
+                                )}
                               </div>
-                            </div>
-                          ))
+                            )
+                          })
                         ) : (
                           <p className="text-xs text-gray-500 italic">No users assigned to this role yet</p>
                         )
@@ -1367,6 +1569,53 @@ export default function UserAccessRoleManagement() {
                 className="bg-red-600 hover:bg-red-700 text-white"
               >
                 Delete Role
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Remove Role From User Confirmation Modal */}
+      {removeRoleConfirmation.show && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-red-500 to-rose-600 px-6 py-4">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 bg-white/20 rounded-full">
+                  <AlertCircle className="h-6 w-6 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-white">Confirm Remove Role</h3>
+                  <p className="text-sm text-white/90">Remove role from user</p>
+                </div>
+              </div>
+            </div>
+            
+            {/* Content */}
+            <div className="p-6">
+              <p className="text-gray-700 mb-2">
+                Are you sure you want to remove the role <span className="font-semibold text-red-600">"{removeRoleConfirmation.roleName}"</span> from user <span className="font-semibold">"{removeRoleConfirmation.userName}"</span>?
+              </p>
+              <p className="text-sm text-gray-500">
+                This will remove the role assignment but will NOT delete the user or the role itself.
+              </p>
+            </div>
+            
+            {/* Actions */}
+            <div className="bg-gray-50 px-6 py-4 flex justify-end space-x-3">
+              <Button
+                variant="outline"
+                onClick={cancelRemoveRoleFromUser}
+                className="hover:bg-gray-100"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={confirmRemoveRoleFromUser}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                Remove Role
               </Button>
             </div>
           </div>

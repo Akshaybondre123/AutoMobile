@@ -29,10 +29,13 @@ router.post("/role-permissions", rbacController.assignPermissionToRole);
 router.delete("/role-permissions/:roleId/:permissionId", rbacController.removePermissionFromRole);
 
 // ==================== UTILITY ROUTES ====================
+// Static routes should come before dynamic routes
+router.get("/cities", rbacController.getAllCities);
+router.get("/showrooms", rbacController.getAllShowrooms);
+router.get("/user-roles-summary", rbacController.getUserRolesSummary);
 router.get("/users/:userId/permissions", rbacController.getUserPermissions);
 router.get("/users/:userId/permissions/:permissionKey", rbacController.checkUserPermission);
 router.get("/users/email/:email/permissions", rbacController.getUserPermissionsByEmail);
 router.get("/users/email/:email/roles", rbacController.getUserRolesByEmail);
-router.get("/user-roles-summary", rbacController.getUserRolesSummary);
 
 export default router;

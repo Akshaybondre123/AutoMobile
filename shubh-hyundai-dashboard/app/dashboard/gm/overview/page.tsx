@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { getApiUrl } from "@/lib/config";
 import { useDashboardData } from "@/hooks/useDashboardData";
+import { getAllCities } from "@/lib/api";
 import {
   Car,
   TrendingUp,
@@ -67,15 +68,37 @@ const GMDashboard = () => {
   const [warrantyData, setWarrantyData] = useState<any[]>([]);
   const [roBillingData, setRoBillingData] = useState<any[]>([]);
   const [serviceBookingData, setServiceBookingData] = useState<any[]>([]);
+  const [availableCities, setAvailableCities] = useState<string[]>([]);
 
   // Single-flight guard for advisor-operations API
   const opsFetchInFlight = useRef<boolean>(false);
   const opsLastFetch = useRef<number>(0);
   const OPS_COOLDOWN_MS = 5_000;
 
-  // Check user role
-  const isGM = user?.role === "general_manager";
+  // Check user role - owner is the privileged role now (handle formatted role strings)
+  const isOwner = () => {
+    if (!user?.role) return false
+    const roleStr = String(user.role).toLowerCase().trim()
+    const roleParts = roleStr.split('|').map(p => p.trim())
+    return roleParts.some(part => part === 'owner') || roleStr.includes('owner')
+  }
   const isSM = user?.role === "service_manager";
+
+  // Fetch cities from database
+  useEffect(() => {
+    const fetchCities = async () => {
+      try {
+        const cities = await getAllCities()
+        if (cities && cities.length > 0) {
+          setAvailableCities(cities)
+          console.log('✅ Cities loaded from database:', cities)
+        }
+      } catch (error) {
+        console.error('❌ Error fetching cities:', error)
+      }
+    }
+    fetchCities()
+  }, [])
 
   // For SM users, set selectedBranch to their city
   useEffect(() => {
@@ -558,15 +581,19 @@ const GMDashboard = () => {
     referrals: 45
   };
 
-  // Filter Options - SM users can only see their city
+  // Filter Options - Use cities from database, SM users can only see their city
   const branchOptions = isSM && user?.city
     ? [{ value: user.city, label: user.city }]
+    : availableCities.length > 0
+    ? [
+        { value: 'all', label: 'All Cities' },
+        ...availableCities.map(city => ({ value: city, label: city }))
+      ]
     : [
         { value: 'all', label: 'All Cities' },
+        // Fallback only if API fails
         { value: 'Palanpur', label: 'Palanpur' },
-        { value: 'Nagpur', label: 'Nagpur' },
-        { value: 'Mumbai', label: 'Mumbai' },
-        { value: 'Nashik', label: 'Nashik' }
+        { value: 'Patan', label: 'Patan' }
       ];
 
   const departmentOptions = [

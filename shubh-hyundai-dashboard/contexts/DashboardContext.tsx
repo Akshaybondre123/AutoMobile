@@ -1,17 +1,21 @@
 "use client"
 
-import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react'
+import React, { createContext, useContext, useEffect, ReactNode } from 'react'
+import { useAppSelector, useAppDispatch } from '@/lib/store/hooks'
+import {
+  setData as setDashboardData,
+  setLoading as setDashboardLoading,
+  setError as setDashboardError,
+  markForRefresh as markDashboardForRefresh,
+  clearUserData as clearDashboardUserData,
+  clearAllData as clearAllDashboardData,
+  cleanExpiredData,
+  type DashboardData,
+  type DataType
+} from '@/lib/store/slices/dashboardSlice'
 
-// Types
-export interface DashboardData {
-  summary?: any
-  data: any[]
-  count?: number
-  totalAmount?: number
-  [key: string]: any
-}
-
-export type DataType = "average" | "ro_billing" | "operations" | "warranty" | "service_booking" | "repair_order_list"
+// Re-export types for backwards compatibility
+export type { DashboardData, DataType }
 
 interface DashboardState {
   [userKey: string]: {
@@ -46,18 +50,7 @@ interface DashboardContextType {
   getStats: () => { totalEntries: number, totalSize: number, oldestEntry: number | null }
 }
 
-// Action types
-type DashboardAction =
-  | { type: 'SET_DATA'; payload: { userKey: string; dataType: string; data: DashboardData } }
-  | { type: 'SET_LOADING'; payload: { userKey: string; dataType: string; loading: boolean } }
-  | { type: 'SET_ERROR'; payload: { userKey: string; dataType: string; error: string | null } }
-  | { type: 'MARK_FOR_REFRESH'; payload: { userKey: string; dataType?: string } }
-  | { type: 'CLEAR_USER_DATA'; payload: { userKey: string } }
-  | { type: 'CLEAR_ALL_DATA' }
-  | { type: 'LOAD_FROM_STORAGE'; payload: DashboardState }
-
-// Constants
-const STORAGE_KEY = 'dashboard_global_state'
+// Constants (moved to slice, but kept here for helper functions)
 const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes
 const STALE_TIME = 2 * 60 * 1000 // 2 minutes - show stale data but refetch in background
 
@@ -78,125 +71,6 @@ const isDataExpired = (lastFetched: number): boolean => {
   return Date.now() - lastFetched > CACHE_DURATION
 }
 
-// Initial state
-const initialState: DashboardState = {}
-
-// Reducer
-const dashboardReducer = (state: DashboardState, action: DashboardAction): DashboardState => {
-  switch (action.type) {
-    case 'SET_DATA': {
-      const { userKey, dataType, data } = action.payload
-      return {
-        ...state,
-        [userKey]: {
-          ...state[userKey],
-          [dataType]: {
-            data,
-            lastFetched: Date.now(),
-            isLoading: false,
-            error: null,
-            hasData: true,
-            needsRefresh: false
-          }
-        }
-      }
-    }
-    
-    case 'SET_LOADING': {
-      const { userKey, dataType, loading } = action.payload
-      return {
-        ...state,
-        [userKey]: {
-          ...state[userKey],
-          [dataType]: {
-            ...state[userKey]?.[dataType],
-            data: state[userKey]?.[dataType]?.data || null,
-            lastFetched: state[userKey]?.[dataType]?.lastFetched || 0,
-            isLoading: loading,
-            error: loading ? null : state[userKey]?.[dataType]?.error || null,
-            hasData: state[userKey]?.[dataType]?.hasData || false,
-            needsRefresh: state[userKey]?.[dataType]?.needsRefresh || false
-          }
-        }
-      }
-    }
-    
-    case 'SET_ERROR': {
-      const { userKey, dataType, error } = action.payload
-      return {
-        ...state,
-        [userKey]: {
-          ...state[userKey],
-          [dataType]: {
-            ...state[userKey]?.[dataType],
-            data: state[userKey]?.[dataType]?.data || null,
-            lastFetched: state[userKey]?.[dataType]?.lastFetched || 0,
-            isLoading: false,
-            error,
-            hasData: state[userKey]?.[dataType]?.hasData || false,
-            needsRefresh: state[userKey]?.[dataType]?.needsRefresh || false
-          }
-        }
-      }
-    }
-    
-    case 'MARK_FOR_REFRESH': {
-      const { userKey, dataType } = action.payload
-      if (dataType) {
-        // Mark specific data type for refresh
-        return {
-          ...state,
-          [userKey]: {
-            ...state[userKey],
-            [dataType]: {
-              ...state[userKey]?.[dataType],
-              data: state[userKey]?.[dataType]?.data || null,
-              lastFetched: state[userKey]?.[dataType]?.lastFetched || 0,
-              isLoading: state[userKey]?.[dataType]?.isLoading || false,
-              error: state[userKey]?.[dataType]?.error || null,
-              hasData: state[userKey]?.[dataType]?.hasData || false,
-              needsRefresh: true
-            }
-          }
-        }
-      } else {
-        // Mark all data types for this user for refresh
-        const userData = state[userKey] || {}
-        const updatedUserData = Object.keys(userData).reduce((acc, dt) => ({
-          ...acc,
-          [dt]: {
-            ...userData[dt],
-            needsRefresh: true
-          }
-        }), {})
-        
-        return {
-          ...state,
-          [userKey]: updatedUserData
-        }
-      }
-    }
-    
-    case 'CLEAR_USER_DATA': {
-      const { userKey } = action.payload
-      const newState = { ...state }
-      delete newState[userKey]
-      return newState
-    }
-    
-    case 'CLEAR_ALL_DATA': {
-      return initialState
-    }
-    
-    case 'LOAD_FROM_STORAGE': {
-      return action.payload
-    }
-    
-    default:
-      return state
-  }
-}
-
 // Context
 const DashboardContext = createContext<DashboardContextType | undefined>(undefined)
 
@@ -206,52 +80,13 @@ interface DashboardProviderProps {
 }
 
 export const DashboardProvider: React.FC<DashboardProviderProps> = ({ children }) => {
-  const [state, dispatch] = useReducer(dashboardReducer, initialState)
+  const dispatch = useAppDispatch()
+  const state = useAppSelector((state) => state.dashboard)
 
-  // Load from localStorage on mount
+  // Clean expired data on mount (after rehydration)
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY)
-      if (stored) {
-        const parsedState = JSON.parse(stored)
-        // Clean expired entries
-        const cleanedState = Object.keys(parsedState).reduce((acc, userKey) => {
-          const userData = parsedState[userKey]
-          const cleanedUserData = Object.keys(userData).reduce((userAcc, dataType) => {
-            const entry = userData[dataType]
-            if (!isDataExpired(entry.lastFetched)) {
-              return {
-                ...userAcc,
-                [dataType]: {
-                  ...entry,
-                  needsRefresh: isDataStale(entry.lastFetched) // Mark stale data for background refresh
-                }
-              }
-            }
-            return userAcc
-          }, {})
-          
-          if (Object.keys(cleanedUserData).length > 0) {
-            acc[userKey] = cleanedUserData
-          }
-          return acc
-        }, {} as DashboardState)
-        
-        dispatch({ type: 'LOAD_FROM_STORAGE', payload: cleanedState })
-      }
-    } catch (error) {
-      console.warn('Failed to load dashboard state from storage:', error)
-    }
-  }, [])
-
-  // Save to localStorage whenever state changes
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-    } catch (error) {
-      console.warn('Failed to save dashboard state to storage:', error)
-    }
-  }, [state])
+    dispatch(cleanExpiredData())
+  }, [dispatch])
 
   // Context value
   const contextValue: DashboardContextType = {
@@ -293,37 +128,37 @@ export const DashboardProvider: React.FC<DashboardProviderProps> = ({ children }
       const userKey = getUserKey(userEmail, city)
       const dataKey = getDataKey(dataType)
       console.log('💾 Global State: Setting data for', userKey, dataKey, '- Records:', data?.data?.length || 0)
-      dispatch({ type: 'SET_DATA', payload: { userKey, dataType: dataKey, data } })
+      dispatch(setDashboardData({ userKey, dataType: dataKey, data }))
     },
 
     setLoading: (userEmail: string, dataType: DataType, loading: boolean, city?: string) => {
       const userKey = getUserKey(userEmail, city)
       const dataKey = getDataKey(dataType)
-      dispatch({ type: 'SET_LOADING', payload: { userKey, dataType: dataKey, loading } })
+      dispatch(setDashboardLoading({ userKey, dataType: dataKey, loading }))
     },
 
     setError: (userEmail: string, dataType: DataType, error: string | null, city?: string) => {
       const userKey = getUserKey(userEmail, city)
       const dataKey = getDataKey(dataType)
-      dispatch({ type: 'SET_ERROR', payload: { userKey, dataType: dataKey, error } })
+      dispatch(setDashboardError({ userKey, dataType: dataKey, error }))
     },
 
     markForRefresh: (userEmail: string, dataType?: DataType, city?: string) => {
       const userKey = getUserKey(userEmail, city)
       const dataKey = dataType ? getDataKey(dataType) : undefined
       console.log('🔄 Global State: Marking for refresh', userKey, dataKey || 'all data types')
-      dispatch({ type: 'MARK_FOR_REFRESH', payload: { userKey, dataType: dataKey } })
+      dispatch(markDashboardForRefresh({ userKey, dataType: dataKey }))
     },
 
     clearUserData: (userEmail: string) => {
       const userKey = getUserKey(userEmail)
       console.log('🗑️ Global State: Clearing user data for', userKey)
-      dispatch({ type: 'CLEAR_USER_DATA', payload: { userKey } })
+      dispatch(clearDashboardUserData({ userKey }))
     },
 
     clearAllData: () => {
       console.log('🗑️ Global State: Clearing all data')
-      dispatch({ type: 'CLEAR_ALL_DATA' })
+      dispatch(clearAllDashboardData())
     },
 
     // Utilities

@@ -31,7 +31,7 @@ export function usePermissions() {
     }
 
     if (user) {
-      // ✅ IMMEDIATE ACCESS: Set role-based permissions synchronously first for GMs / role-based flows
+      // ✅ IMMEDIATE ACCESS: Set role-based permissions synchronously first for owner-managed flows
       const rolePermissions = getWorkingRoleBasedPermissions(user.role)
       if (rolePermissions.length > 0) {
         setPermissions(rolePermissions)
@@ -215,7 +215,7 @@ export function usePermissions() {
           }
         })
         
-        if (summaryResponse.ok) {
+  if (summaryResponse.ok) {
           const summaryData = await summaryResponse.json()
           console.log("📦 Summary API Response Data:", summaryData)
           
@@ -297,13 +297,13 @@ export function usePermissions() {
         } else {
           console.log("📊 User not found in database")
           // ✅ NEW: If user is not in database at all, check if they have a valid role
-          // Only give role-based permissions if they have a recognized role
-          if (user.role === "general_manager") {
-            console.log("✅ User is GM but not in database, giving role-based permissions")
+          // Only give role-based permissions if they have a recognized role (owner)
+          if (String(user.role) === "owner") {
+            console.log("✅ User is owner but not in database, giving role-based permissions")
             const currentRolePermissions = getWorkingRoleBasedPermissions(user.role)
             permissionCache.set(fetchKey, { timestamp: Date.now(), perms: currentRolePermissions })
           } else {
-            console.log("🚫 User not in database and not GM - setting empty permissions")
+            console.log("🚫 User not in database and not owner - setting empty permissions")
             setPermissions([])
             permissionCache.set(fetchKey, { timestamp: Date.now(), perms: [] })
           }
@@ -339,15 +339,15 @@ export function usePermissions() {
         setError("Network error: Unable to reach API. Please check your connection and that the backend is running.")
       }
       
-      // ✅ UPDATED: Only fallback to role permissions for general managers
+      // ✅ UPDATED: Only fallback to role permissions for owners
       // Service managers and others need database permissions
-      if (user.role === "general_manager") {
-        console.log("✅ Error occurred but user is GM, giving role-based permissions")
+      if (String(user.role) === "owner") {
+        console.log("✅ Error occurred but user is owner, giving role-based permissions")
         const fallbackPermissions = getWorkingRoleBasedPermissions(user.role)
         const finalFallback = fallbackPermissions.length > 0 ? fallbackPermissions : getBasicPermissions()
         setPermissions(finalFallback)
       } else {
-        console.log("🚫 Error occurred - only GMs get fallback permissions, setting empty permissions")
+        console.log("🚫 Error occurred - only owners get fallback permissions, setting empty permissions")
         // Still set role-based permissions as a last resort for other roles
         const rolePerms = getWorkingRoleBasedPermissions(user.role)
         setPermissions(rolePerms.length > 0 ? rolePerms : [])
@@ -384,7 +384,10 @@ export function usePermissions() {
   }
 
   const getWorkingRoleBasedPermissions = (role: string): string[] => {
-    if (role === "general_manager") {
+  // Only owner gets GM-level role-based fallbacks by default.
+  // All other users must have explicit permissions from database.
+  const roleStr = String(role || "").toLowerCase()
+  if (roleStr === "owner") {
       return [
         "dashboard",
         "overview",
@@ -420,9 +423,15 @@ export function usePermissions() {
   const hasPermission = useCallback((permissionKey: string): boolean => {
     // Extra safety: handle any unexpected non-array state
     if (!Array.isArray(permissions)) {
+      console.warn("⚠️ hasPermission: permissions is not an array:", permissions)
       return false
     }
-    return permissions.includes(permissionKey)
+    const hasIt = permissions.includes(permissionKey)
+    // Debug logging for permission checks (only log if not found to avoid spam)
+    if (!hasIt && permissions.length > 0) {
+      console.log(`🔍 Permission check: "${permissionKey}" - Available permissions:`, permissions)
+    }
+    return hasIt
   }, [permissions])
 
   const hasAnyPermission = useCallback((permissionKeys: string[]): boolean => {

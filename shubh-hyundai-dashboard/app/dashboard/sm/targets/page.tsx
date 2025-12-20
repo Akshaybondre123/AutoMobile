@@ -4,6 +4,9 @@ import React, { useEffect, useState } from "react"
 import { useAuth } from "@/lib/auth-context"
 import { usePermissions } from "@/hooks/usePermissions"
 import { getRoBillingReports, getServiceBookingReports, getWarrantyReports } from "@/lib/api"
+import { useAppSelector, useAppDispatch } from "@/lib/store/hooks"
+import { CityTarget } from "@/lib/store/slices/targetsSlice"
+import { AdvisorAssignment, setAssignments } from "@/lib/store/slices/advisorAssignmentsSlice"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -13,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { AlertCircle, Users, CheckCircle } from "lucide-react"
 import { getApiUrl } from "@/lib/config"
 
-const STORAGE_KEY = "gm_field_targets_v1"
+// Using RTK store instead of localStorage
 
 interface Advisor {
   name: string
@@ -33,7 +36,10 @@ interface AdvisorTarget {
 export default function SMTargetsPage() {
   const { user } = useAuth()
   const { hasPermission } = usePermissions()
-  const [target, setTarget] = useState<any | null>(null)
+  const dispatch = useAppDispatch()
+  // Get targets from RTK store
+  const targets = useAppSelector((state) => state.targets.targets)
+  const [target, setTarget] = useState<CityTarget | null>(null)
   const [achieved, setAchieved] = useState<any | null>(null)
   const [advisors, setAdvisors] = useState<Advisor[]>([])
   const [showDistributeDialog, setShowDistributeDialog] = useState(false)
@@ -53,10 +59,9 @@ export default function SMTargetsPage() {
   useEffect(() => {
     const load = async () => {
       if (!user?.city || !user?.email) return
-      const raw = localStorage.getItem(STORAGE_KEY)
-      const list = raw ? JSON.parse(raw) : []
-      const latest = list.find((l: any) => l.city === user.city)
-      setTarget(latest || null)
+      // Get target from RTK store
+      const cityTarget = targets.find((t) => t.city === user.city)
+      setTarget(cityTarget || null)
 
       if (latest) {
         const ro = await getRoBillingReports(user.city)
@@ -91,7 +96,7 @@ export default function SMTargetsPage() {
       }
     }
     load()
-  }, [user?.city, user?.email])
+  }, [user?.city, user?.email, targets])
 
   if (user?.role !== "service_manager") {
     return (
@@ -153,9 +158,35 @@ export default function SMTargetsPage() {
   }
 
   const handleSaveDistribution = () => {
-    // Save to localStorage or send to backend
-    const storageKey = `sm_advisor_targets_${user?.city}_${target.month}`
-    localStorage.setItem(storageKey, JSON.stringify(advisorTargets))
+    if (!user?.city || !target) return
+    
+    // Save to RTK store instead of localStorage
+    const month = target.month || new Date().toLocaleString("default", { month: "long" })
+    const now = new Date().toISOString()
+    
+    const newAssignments: AdvisorAssignment[] = advisorTargets.map((at) => ({
+      id: `a-${Date.now()}-${at.advisorName}`,
+      advisorName: at.advisorName,
+      city: user.city!,
+      month,
+      labour: at.labour,
+      parts: at.parts,
+      totalVehicles: at.totalVehicles,
+      paidService: at.paidService,
+      freeService: at.freeService,
+      rr: at.rr,
+      achieved: {
+        labour: 0,
+        parts: 0,
+        totalVehicles: 0,
+        paidService: 0,
+        freeService: 0,
+        rr: 0
+      },
+      createdAt: now,
+    }))
+    
+    dispatch(setAssignments(newAssignments))
     
     setSuccessMessage('Targets distributed successfully!')
     setShowDistributeDialog(false)

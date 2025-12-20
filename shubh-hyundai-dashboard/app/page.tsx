@@ -15,7 +15,8 @@ function HomeContent() {
 
   useEffect(() => {
     if (!isLoading) {
-      if (user?.role === "general_manager") {
+      // Owners now map to the GM dashboard
+      if (user?.role === "owner") {
         router.push("/dashboard/gm")
       } else if (user?.role === "service_manager") {
         router.push("/dashboard/sm")

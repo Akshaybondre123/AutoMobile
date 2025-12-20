@@ -70,6 +70,24 @@ export default function ServiceManagerUploadPage() {
     repair_order_list: null,
   })
 
+  // Derive city from email if not present (same logic as useDashboardData)
+  const deriveCity = (email?: string, existingCity?: string): string => {
+    if (existingCity) return existingCity
+    if (!email) return "Pune" // Default
+    const emailParts = email.split('.')
+    if (emailParts.length > 1) {
+      const cityPart = emailParts[1]?.split('@')[0]
+      // Check if it's a valid city name
+      const validCities = ["pune", "mumbai", "nagpur", "palanpur", "patan"]
+      if (cityPart && validCities.includes(cityPart.toLowerCase())) {
+        return cityPart.charAt(0).toUpperCase() + cityPart.slice(1).toLowerCase()
+      }
+    }
+    return "Pune" // Default city
+  }
+
+  const userCity = user?.email ? deriveCity(user.email, user.city) : "Pune"
+
   const handleFileChange = (type: UploadType, event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (file) {
@@ -80,23 +98,83 @@ export default function ServiceManagerUploadPage() {
 
   const handleUpload = async (type: UploadType) => {
     const file = files[type]
-    if (!file || !user?.city || !user?.email) {
+    if (!file || !user?.email) {
       setMessages((prev) => ({
         ...prev,
         [type]: { type: "error", text: "Please select a file and ensure you are logged in" },
       }))
       return
     }
+    
+    // Use derived city
+    const uploadCity = userCity
+    console.log('📍 Upload using city:', uploadCity, '(from:', user.city || 'email/default', ')')
 
     setIsLoading((prev) => ({ ...prev, [type]: true }))
     setMessages((prev) => ({ ...prev, [type]: null }))
 
     try {
+      // Try to get org_id and showroom_id from user object first
+      let orgId = (user as any)?.org_id || (user as any)?.orgId
+      let showroomId = (user as any)?.showroom_id || (user as any)?.showroomId
+
+      // If not available, try to fetch from database
+      if (!orgId || !showroomId) {
+        try {
+          // Fetch user info from /api/auth/me which includes org_id and showroom_id
+          const meResponse = await fetch(getApiUrl("/api/auth/me"), {
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+            }
+          })
+
+          if (meResponse.ok) {
+            const meData = await meResponse.json()
+            if (meData.success && meData.data?.user) {
+              orgId = orgId || meData.data.user.org_id || meData.data.user.orgId
+              showroomId = showroomId || meData.data.user.showroom_id || meData.data.user.showroomId
+            }
+          }
+
+          // If still not available, try to fetch from showrooms (get first showroom as fallback)
+          if (!showroomId) {
+            const showroomsResponse = await fetch(getApiUrl("/api/rbac/showrooms"), {
+              credentials: 'include',
+              headers: {
+                'Content-Type': 'application/json',
+              }
+            })
+
+            if (showroomsResponse.ok) {
+              const showroomsResult = await showroomsResponse.json()
+              if (showroomsResult.success && Array.isArray(showroomsResult.data) && showroomsResult.data.length > 0) {
+                const firstShowroom = showroomsResult.data[0]
+                showroomId = showroomId || firstShowroom._id
+                orgId = orgId || firstShowroom.org_id
+              }
+            }
+          }
+        } catch (fetchError) {
+          console.error('Error fetching org/showroom info:', fetchError)
+        }
+      }
+
+      // Final check - if still missing, show error
+      if (!orgId || !showroomId) {
+        setMessages((prev) => ({
+          ...prev,
+          [type]: { type: "error", text: "Please configure your showroom/org before uploading. Contact administrator to assign a showroom to your account." },
+        }))
+        setIsLoading((prev) => ({ ...prev, [type]: false }))
+        return
+      }
+
       const formData = new FormData()
       formData.append("excelFile", file) // Changed from "file" to "excelFile"
       formData.append("uploaded_by", user.email) // For excel controller
-      formData.append("org_id", "64f8a1b2c3d4e5f6a7b8c9d0") // Demo org ID
-      formData.append("showroom_id", "64f8a1b2c3d4e5f6a7b8c9d1") // Demo showroom ID
+      formData.append("org_id", orgId.toString())
+      formData.append("showroom_id", showroomId.toString())
       
       // Map upload types to backend file types
       const fileTypeMapping: Record<UploadType, string> = {
@@ -133,13 +211,13 @@ export default function ServiceManagerUploadPage() {
         
         // ✅ Invalidate cache for this data type so dashboard shows new data instantly
         if (user?.email) {
-          markForRefresh(user.email, type, user.city || 'default')
+          markForRefresh(user.email, type, uploadCity)
           console.log(`🔄 Cache invalidated for ${type} - dashboard will show new data instantly`)
         }
         
         // ✅ Also invalidate average cache since it depends on all data types
         if (user?.email) {
-          markForRefresh(user.email, 'average', user.city || 'default')
+          markForRefresh(user.email, 'average', uploadCity)
           console.log('🔄 Average cache invalidated - will recalculate with new data')
         }
       } else {
@@ -215,7 +293,7 @@ export default function ServiceManagerUploadPage() {
         <div className="space-y-2">
           <h1 className="text-4xl font-bold text-gray-900">Upload Data</h1>
           <p className="text-gray-500">
-            Upload Excel files for {user?.city} Service Center • Only you can view your uploaded data
+            Upload Excel files for {userCity} Service Center • Only you can view your uploaded data
           </p>
         </div>
         <Button
