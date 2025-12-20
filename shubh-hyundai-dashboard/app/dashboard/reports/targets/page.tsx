@@ -3,7 +3,10 @@
 import React, { useEffect, useState } from "react"
 import { useAuth } from "@/lib/auth-context"
 import { usePermissions } from "@/hooks/usePermissions"
-import { getRoBillingReports } from "@/lib/api"
+import { useDashboardData } from "@/hooks/useDashboardData"
+import { useAppSelector, useAppDispatch } from "@/lib/store/hooks"
+import { CityTarget } from "@/lib/store/slices/targetsSlice"
+import { AdvisorAssignment, setAssignments } from "@/lib/store/slices/advisorAssignmentsSlice"
 import { getApiUrl } from "@/lib/config"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -23,8 +26,7 @@ import {
 } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
 
-const GM_TARGETS_KEY = "gm_field_targets_v1"
-const ADVISOR_ASSIGNMENTS_KEY = "advisor_field_targets_v1"
+// Removed localStorage keys - using RTK store instead
 
 function remainingWorkingDaysFromToday() {
   const today = new Date()
@@ -408,12 +410,32 @@ const SummaryStats = ({ advisors, assignments, cityTarget, remainingDays }: {
 export default function AdvisorTargetsReportPage() {
   const { user } = useAuth()
   const { hasPermission } = usePermissions()
+  const dispatch = useAppDispatch()
+  // Get targets and assignments from RTK store
+  const targets = useAppSelector((state) => state.targets.targets)
+  const assignments = useAppSelector((state) => state.advisorAssignments.assignments)
+
+  // Helper function to check if user is Service Manager (handles formatted role strings like "Service Manager | CRM | BSM")
+  const isServiceManager = () => {
+    if (!user?.role) {
+      console.log('🔍 Distribute button check: No user role found')
+      return false
+    }
+    const roleStr = String(user.role).toLowerCase().trim()
+    console.log('🔍 Distribute button check: Role string:', roleStr)
+    const roleParts = roleStr.split('|').map(p => p.trim())
+    const isSM = roleParts.some(part => 
+      part.includes('service manager') || 
+      part === 'service_manager' ||
+      part.includes('service_manager')
+    ) || roleStr.includes('service manager') || roleStr.includes('service_manager')
+    console.log('🔍 Distribute button check: Is Service Manager?', isSM)
+    return isSM
+  }
+  
   const [advisors, setAdvisors] = useState<any[]>([])
-  const [cityTarget, setCityTarget] = useState<any | null>(null)
-  const [assignments, setAssignments] = useState<any[]>([])
+  const [cityTarget, setCityTarget] = useState<CityTarget | null>(null)
   const [roRows, setRoRows] = useState<any[]>([])
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedAdvisors, setSelectedAdvisors] = useState<string[]>([])
   const [expandedAdvisor, setExpandedAdvisor] = useState<string | null>(null)
@@ -434,62 +456,210 @@ export default function AdvisorTargetsReportPage() {
 
   const remainingDays = remainingWorkingDaysFromToday()
 
+  // ✅ Use shared dashboard cache so RO Billing data is fetched once and reused
+  const {
+    data: dashboardData,
+    isLoading: dashboardLoading,
+    error: dashboardError,
+  } = useDashboardData({ dataType: "ro_billing" })
+
   // Check if targets are already distributed for current month
   const areTargetsDistributed = () => {
-    if (!user?.city || !cityTarget) return false
+    if (!user?.city || !cityTarget) {
+      console.log('🔍 Targets distribution check: No city or cityTarget', {
+        hasCity: !!user?.city,
+        hasCityTarget: !!cityTarget
+      })
+      return false
+    }
     
-    const currentMonth = cityTarget?.month || new Date().toLocaleString("default", { month: "long" })
+    // Extract month from cityTarget.month (could be "January" or "January 2025")
+    const targetMonth = cityTarget?.month || new Date().toLocaleString("default", { month: "long" })
+    const monthOnly = targetMonth.split(' ')[0] // Get just the month name (e.g., "January" from "January 2025")
     const currentYear = new Date().getFullYear()
     
-    return assignments.some(assignment => 
-      assignment.city === user.city && 
-      assignment.month === currentMonth &&
-      assignment.createdAt && 
-      new Date(assignment.createdAt).getFullYear() === currentYear
-    )
+    // Check if assignments exist for this city, month (match by month name), and year
+    const isDistributed = assignments.some(assignment => {
+      // Case-insensitive city comparison
+      const cityMatches = assignment.city && user.city && 
+        assignment.city.toLowerCase().trim() === user.city.toLowerCase().trim()
+      
+      if (!cityMatches) return false
+      
+      // Compare month - handle both "January" and "January 2025" formats
+      const assignmentMonthOnly = assignment.month?.split(' ')[0] || assignment.month
+      const monthMatches = assignmentMonthOnly === monthOnly
+      
+      // Also check year from createdAt
+      const yearMatches = assignment.createdAt && 
+        new Date(assignment.createdAt).getFullYear() === currentYear
+      
+      return monthMatches && yearMatches
+    })
+    
+    console.log('🔍 Targets distribution check:', {
+      userCity: user.city,
+      targetMonth,
+      monthOnly,
+      currentYear,
+      assignmentsCount: assignments.length,
+      matchingAssignments: assignments.filter(a => 
+        a.city && user.city && a.city.toLowerCase().trim() === user.city.toLowerCase().trim()
+      ).length,
+      isDistributed
+    })
+    
+    return isDistributed
   }
 
   const targetsAlreadyDistributed = areTargetsDistributed()
 
+  // Load RO rows and advisors from cached dashboard data + RTK store targets
   useEffect(() => {
-    async function load() {
-      if (!user?.city) return
-      setIsLoading(true)
-      setError(null)
-      try {
-        const response = await fetch(
-          getApiUrl(`/api/service-manager/dashboard-data?uploadedBy=${user.email}&city=${user.city}&dataType=ro_billing`)
-        )
-        
-        if (!response.ok) {
-          throw new Error("Failed to fetch RO Billing data")
-        }
-        
-        const result = await response.json()
-        const roData = Array.isArray(result.data) ? result.data : []
-        setRoRows(roData)
-        
-        const uniqueAdvisorNames = Array.from(
-          new Set(roData.map((r: any) => r.serviceAdvisor).filter(Boolean))
-        )
-        const advisorList = uniqueAdvisorNames.map((name: any) => ({ name }))
-        setAdvisors(advisorList)
-        
-        const rawTarget = localStorage.getItem(GM_TARGETS_KEY)
-        const targets = rawTarget ? JSON.parse(rawTarget) : []
-        setCityTarget(targets.find((t: any) => t.city === user.city) || null)
-        
-        const rawAssign = localStorage.getItem(ADVISOR_ASSIGNMENTS_KEY)
-        setAssignments(rawAssign ? JSON.parse(rawAssign) : [])
-      } catch (err) {
-        console.error("Error loading data:", err)
-        setError("Failed to load data. Please check if RO Billing data is uploaded.")
-      } finally {
-        setIsLoading(false)
+    if (!user?.city) return
+
+    const roData = Array.isArray(dashboardData?.data) ? dashboardData.data : []
+    setRoRows(roData)
+    
+    const uniqueAdvisorNames = Array.from(
+      new Set(roData.map((r: any) => r.serviceAdvisor).filter(Boolean))
+    )
+    const advisorList = uniqueAdvisorNames.map((name: any) => ({ name }))
+    setAdvisors(advisorList)
+    
+    // Get city target from RTK store - handle abbreviations like "Ptn" → "Patan"
+    const findCityTarget = async () => {
+      let cityToMatch = user.city?.toLowerCase().trim() || ''
+      
+      // Handle common city abbreviations
+      const cityAbbreviationMap: Record<string, string> = {
+        'ptn': 'patan',
+        'pln': 'palanpur',
+        'pune': 'pune',
+        'mum': 'mumbai',
+        'nag': 'nagpur'
       }
+      
+      // Try to expand abbreviation (e.g., "Ptn" → "patan")
+      if (cityAbbreviationMap[cityToMatch]) {
+        const expandedCity = cityAbbreviationMap[cityToMatch]
+        console.log('📍 Expanding city abbreviation:', user.city, '→', expandedCity)
+        cityToMatch = expandedCity
+      }
+      
+      // First try exact match with user.city (or expanded abbreviation)
+      let cityTargetData = targets.find((t) => {
+        if (!t.city || !cityToMatch) return false
+        const normalizedTargetCity = t.city.toLowerCase().trim()
+        return normalizedTargetCity === cityToMatch
+      })
+      
+      // If no exact match, try fuzzy matching for abbreviations
+      // This handles cases where "Ptn" should match "Patan"
+      if (!cityTargetData && cityToMatch) {
+        cityTargetData = targets.find((t) => {
+          if (!t.city) return false
+          const normalizedTargetCity = t.city.toLowerCase().trim()
+          
+          // For 3-letter abbreviations like "ptn", check if target city starts with same letters
+          // "ptn" → "patan" (both start with 'p', and 'patan' contains 'p', 't', 'n' in order)
+          if (cityToMatch.length === 3 && normalizedTargetCity.length >= 4) {
+            // Check if first letter matches and the abbreviation letters appear in order
+            if (normalizedTargetCity[0] === cityToMatch[0]) {
+              let targetIndex = 0
+              let abbrevIndex = 0
+              while (targetIndex < normalizedTargetCity.length && abbrevIndex < cityToMatch.length) {
+                if (normalizedTargetCity[targetIndex] === cityToMatch[abbrevIndex]) {
+                  abbrevIndex++
+                }
+                targetIndex++
+              }
+              // If we matched all abbreviation letters, it's a match
+              if (abbrevIndex === cityToMatch.length) {
+                return true
+              }
+            }
+          }
+          
+          // Also try reverse - check if target city starts with user city
+          if (normalizedTargetCity.startsWith(cityToMatch) || cityToMatch.startsWith(normalizedTargetCity)) {
+            return true
+          }
+          
+          return false
+        })
+        
+        if (cityTargetData) {
+          console.log('✅ Fuzzy match found:', user.city, '→', cityTargetData.city)
+        }
+      }
+      
+      // If still no match, try to get city from showroom
+      if (!cityTargetData) {
+        try {
+          const userAny: any = user
+          const userShowroomId = userAny?.showroom_id || userAny?.showroomId
+          
+          if (userShowroomId) {
+            const showroomsResponse = await fetch(getApiUrl("/api/rbac/showrooms"), {
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' }
+            })
+            
+            if (showroomsResponse.ok) {
+              const showroomsResult = await showroomsResponse.json()
+              if (showroomsResult.success && Array.isArray(showroomsResult.data)) {
+                const showrooms = showroomsResult.data as Array<{ _id: string, showroom_city?: string }>
+                const userShowroom = showrooms.find((showroom) => 
+                  String(showroom._id) === String(userShowroomId)
+                )
+                
+                if (userShowroom?.showroom_city) {
+                  const showroomCityNormalized = userShowroom.showroom_city.toLowerCase().trim()
+                  console.log('📍 Found showroom city:', userShowroom.showroom_city, 'trying to match with targets')
+                  
+                  // Try matching with showroom city
+                  cityTargetData = targets.find((t) => {
+                    if (!t.city) return false
+                    const normalizedTargetCity = t.city.toLowerCase().trim()
+                    return normalizedTargetCity === showroomCityNormalized
+                  })
+                  
+                  if (cityTargetData) {
+                    console.log('✅ Matched target using showroom city:', showroomCityNormalized)
+                  }
+                }
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('⚠️ Could not fetch showroom city:', err)
+        }
+      }
+      
+      setCityTarget(cityTargetData || null)
+      
+      // Enhanced debugging
+      console.log('🔍 City Target Lookup:', {
+        userCity: user.city,
+        cityToMatch,
+        totalTargetsInStore: targets.length,
+        availableTargets: targets.map(t => ({ 
+          city: t.city, 
+          normalized: t.city?.toLowerCase().trim(),
+          month: t.month
+        })),
+        foundTarget: cityTargetData ? {
+          city: cityTargetData.city,
+          month: cityTargetData.month,
+          id: cityTargetData.id
+        } : null,
+        matchResult: cityTargetData ? 'MATCH FOUND ✅' : 'NO MATCH ❌'
+      })
     }
-    load()
-  }, [user?.city, user?.email])
+    
+    findCityTarget()
+  }, [user?.city, dashboardData, targets])
 
   const handleDistributeClick = () => {
     if (!user?.city) {
@@ -608,8 +778,8 @@ export default function AdvisorTargetsReportPage() {
       createdAt: now,
     }))
 
-    localStorage.setItem(ADVISOR_ASSIGNMENTS_KEY, JSON.stringify(newAssigns))
-    setAssignments(newAssigns)
+    // Save to RTK store instead of localStorage
+    dispatch(setAssignments(newAssigns))
     setSuccessMessage('Targets distributed successfully!')
     setShowDistributeDialog(false)
     setTimeout(() => setSuccessMessage(''), 3000)
@@ -717,25 +887,31 @@ export default function AdvisorTargetsReportPage() {
               )}
             </div>
             
-            {user?.role === "service_manager" && (
-              <Button 
-                onClick={handleDistributeClick}
-                disabled={!cityTarget || targetsAlreadyDistributed}
-                className={`font-semibold shadow-md ${
-                  targetsAlreadyDistributed 
-                    ? "bg-gray-400 hover:bg-gray-400 text-gray-600 cursor-not-allowed" 
-                    : "bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white"
-                }`}
-              >
-                <Users className="h-4 w-4 mr-2" />
-                {targetsAlreadyDistributed ? "Targets Already Distributed" : "Distribute Targets"}
-              </Button>
-            )}
+            {/* Show button for Service Managers - they can distribute targets */}
+            <Button 
+              onClick={handleDistributeClick}
+              disabled={!cityTarget || targetsAlreadyDistributed || !isServiceManager()}
+              className={`font-semibold shadow-md ${
+                targetsAlreadyDistributed || !isServiceManager() || !cityTarget
+                  ? "bg-gray-400 hover:bg-gray-400 text-gray-600 cursor-not-allowed" 
+                  : "bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white"
+              }`}
+            >
+              <Users className="h-4 w-4 mr-2" />
+              {!isServiceManager() 
+                ? "Service Manager Only"
+                : !cityTarget
+                  ? "No City Target Set (GM must assign target first)"
+                : targetsAlreadyDistributed 
+                  ? "Targets Already Distributed" 
+                  : "Distribute Targets"
+              }
+            </Button>
           </div>
         </div>
 
         {/* Summary Stats */}
-        {!isLoading && !error && advisors.length > 0 && (
+        {!dashboardLoading && !dashboardError && advisors.length > 0 && (
           <SummaryStats 
             advisors={advisors}
             assignments={assignments}
@@ -819,7 +995,7 @@ export default function AdvisorTargetsReportPage() {
           </CardHeader>
 
           <CardContent className="p-4 md:p-6">
-            {isLoading ? (
+            {dashboardLoading ? (
               <div className="text-center py-12">
                 <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-blue-100 mb-4">
                   <div className="animate-spin">
@@ -828,10 +1004,12 @@ export default function AdvisorTargetsReportPage() {
                 </div>
                 <p className="text-gray-600">Loading advisor data...</p>
               </div>
-            ) : error ? (
+            ) : dashboardError ? (
               <div className="text-center py-12">
                 <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-                <p className="text-red-800 font-semibold">{error}</p>
+                <p className="text-red-800 font-semibold">
+                  {dashboardError || "Failed to load data. Please upload RO Billing data to see advisors and their performance."}
+                </p>
                 <p className="text-red-700 mt-2">Please upload RO Billing data to see advisors and their performance.</p>
               </div>
             ) : displayAdvisors.length === 0 ? (
@@ -864,7 +1042,7 @@ export default function AdvisorTargetsReportPage() {
             )}
 
             {/* Legend */}
-            {!isLoading && !error && displayAdvisors.length > 0 && (
+            {!dashboardLoading && !dashboardError && displayAdvisors.length > 0 && (
               <div className="mt-8 pt-6 border-t border-gray-200">
                 <h4 className="font-semibold text-gray-900 mb-3">Performance Indicators</h4>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

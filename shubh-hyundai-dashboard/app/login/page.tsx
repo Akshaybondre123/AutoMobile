@@ -13,40 +13,42 @@ export default function LoginPage() {
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [isLoading, setIsLoading] = useState(false)
-  const { login } = useAuth()
+  const { login, user } = useAuth()
   const router = useRouter()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
+    
+    // Validate inputs before attempting login
+    const trimmedEmail = email.trim()
+    const trimmedPassword = password.trim()
+    
+    if (!trimmedEmail || !trimmedPassword) {
+      setError("Email and password are required")
+      return
+    }
+    
     setIsLoading(true)
 
     try {
       // Perform login
-      await login(email, password)
-
-      // Redirect based on role or email
-      if (email === "gm@shubh.com") {
-        router.push("/dashboard/gm")
-      } else if (email.startsWith("sm.")) {
-        router.push("/dashboard/sm")
-      } else if (email.startsWith("bdm.")) {
-        router.push("/dashboard/bdm")
-      } else if (email.startsWith("sa.")) {
-        router.push("/dashboard/sa")
-      } else {
-        router.push("/dashboard") // fallback (optional)
-      }
+      await login(trimmedEmail, trimmedPassword)
+      
+      // After login, redirect to /dashboard and let the dashboard page handle routing
+      // This ensures user state is fully loaded before routing decisions
+      router.push("/dashboard")
     } catch (err) {
-      setError("Invalid email or password")
+      setError(err instanceof Error ? err.message : "Invalid email or password")
     } finally {
       setIsLoading(false)
     }
   }
 
+  // const demoAccounts = [];
   const demoAccounts = [
-    { email: "gm@shubh.com", role: "General Manager", city: "All Cities", password: "password" },
-    { email: "sm.pune@shubh.com", role: "Service Manager", city: "Pune", password: "password" },
+    { email: "pratham.agrawal@shubhhyundai.com", role: "Owner", city: "All Cities", password: "Welcome123!" },
+    { email: "smservice.ptn@shubhhyundai.com", role: "Service Manager", city: "Pkjhjatan", password: "Welcome123!" },
     { email: "sm.mumbai@shubh.com", role: "Service Manager", city: "Mumbai", password: "password" },
     { email: "sm.nagpur@shubh.com", role: "Service Manager", city: "Nagpur", password: "password" },
     { email: "bdm.pune@shub.com", role: "Body Shop Manager", city: "Pune", password: "bodyshop" },

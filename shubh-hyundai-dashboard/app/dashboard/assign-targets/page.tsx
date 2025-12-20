@@ -46,8 +46,8 @@ export default function AssignTargetsPage() {
     loadData()
   }, [])
 
-  // ✅ UPDATED: Check target assignment permissions
-  if (!hasPermission('gm_targets') && !hasPermission('target_report') && user?.role !== "general_manager") {
+  // ✅ UPDATED: Check target assignment permissions; owners get GM access
+  if (!hasPermission('gm_targets') && !hasPermission('target_report') && user?.role !== "owner") {
     return (
       <div className="text-center py-12">
         <AlertCircle className="h-12 w-12 text-destructive mx-auto mb-4" />

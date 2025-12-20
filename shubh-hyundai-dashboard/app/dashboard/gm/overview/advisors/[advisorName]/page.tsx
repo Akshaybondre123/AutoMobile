@@ -4,6 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { getApiUrl } from '@/lib/config';
+import { useAppSelector } from '@/lib/store/hooks';
+import { AdvisorAssignment } from '@/lib/store/slices/advisorAssignmentsSlice';
 import { 
   ArrowLeft, User, DollarSign, Wrench, Package, Target,
   TrendingUp, TrendingDown, Calendar, BarChart3, PieChart,
@@ -42,51 +44,37 @@ const AdvisorDetailPage = () => {
   const advisorName = decodeURIComponent(params.advisorName as string);
   const { user } = useAuth();
   
+  // Get assignments from RTK store
+  const assignments = useAppSelector((state) => state.advisorAssignments.assignments);
+  
   const [advisorData, setAdvisorData] = useState<AdvisorDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [targetData, setTargetData] = useState<any>(null);
+  const [targetData, setTargetData] = useState<AdvisorAssignment | null>(null);
   const [isBodyshopAdvisor, setIsBodyshopAdvisor] = useState(false);
 
-  // Fetch target data from localStorage (client-side only)
+  // Fetch target data from RTK store
   useEffect(() => {
     if (!user?.city || !advisorName) return;
 
     try {
-      // Get current month for target lookup
-      const currentDate = new Date();
-      const currentMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
-      
-      // Use the same localStorage keys as reports/targets page
-      const ADVISOR_ASSIGNMENTS_KEY = "advisor_field_targets_v1";
-      const advisorTargetsData = localStorage.getItem(ADVISOR_ASSIGNMENTS_KEY);
-      
-      console.log('🔍 Debug Target Lookup (Reports/Targets Logic):');
+      console.log('🔍 Debug Target Lookup (RTK Store):');
       console.log('- Advisor Name:', advisorName);
       console.log('- User City:', user.city);
-      console.log('- Target Key:', ADVISOR_ASSIGNMENTS_KEY);
-      console.log('- Found Data:', advisorTargetsData);
+      console.log('- Assignments from store:', assignments);
       
-      if (advisorTargetsData) {
-        const assignments = JSON.parse(advisorTargetsData);
-        console.log('- Parsed assignments:', assignments);
-        
-        // Find assignment for this advisor and city (same logic as reports/targets)
-        const assignment = assignments.find((assign: any) => 
-          assign.advisorName === advisorName && assign.city === user.city
-        );
-        
-        console.log('- Found assignment:', assignment);
-        setTargetData(assignment || null);
-      } else {
-        console.log('- No assignment data found');
-        setTargetData(null);
-      }
+      // Find assignment for this advisor and city
+      const assignment = assignments.find((assign: AdvisorAssignment) => 
+        assign.advisorName === advisorName && assign.city === user.city
+      );
+      
+      console.log('- Found assignment:', assignment);
+      setTargetData(assignment || null);
     } catch (error) {
-      console.error('Error loading advisor targets from localStorage:', error);
+      console.error('Error loading advisor targets from RTK store:', error);
       setTargetData(null);
     }
-  }, [user?.city, advisorName]);
+  }, [user?.city, advisorName, assignments]);
 
   useEffect(() => {
     const fetchAdvisorDetails = async () => {

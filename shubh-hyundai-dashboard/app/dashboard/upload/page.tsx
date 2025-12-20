@@ -92,7 +92,12 @@ export default function UploadPage() {
 
   const loadUploadData = async () => {
     if (user?.city) {
-      const showroomId = "64f8a1b2c3d4e5f6a7b8c9d1" // Demo showroom ID
+      // Do not use hardcoded showroom ids. Use the showroom id attached to the logged-in user.
+      const showroomId = (user as any)?.showroom_id || (user as any)?.showroomId
+      if (!showroomId) {
+        console.warn('Skipping upload history load: user has no showroom_id configured')
+        return
+      }
       const [history, stats] = await Promise.all([
         getUploadHistory(showroomId),
         getUploadStats(showroomId),
@@ -155,16 +160,24 @@ export default function UploadPage() {
 
     setIsLoading((prev) => ({ ...prev, [reportType]: true }))
     try {
-      // For demo purposes, using hardcoded IDs. In production, these would come from user context or API
-      const orgId = "64f8a1b2c3d4e5f6a7b8c9d0" // Demo org ID
-      const showroomId = "64f8a1b2c3d4e5f6a7b8c9d1" // Demo showroom ID
-      
+      // Use organisation & showroom ids from the authenticated user. Do not use hardcoded ids.
+      const orgId = (user as any)?.org_id || (user as any)?.orgId
+      const showroomId = (user as any)?.showroom_id || (user as any)?.showroomId
+
+      if (!orgId || !showroomId) {
+        setMessages((prev) => ({
+          ...prev,
+          [reportType]: { type: "error", text: "Org or Showroom not configured for current user. Please configure your showroom before uploading." },
+        }))
+        return
+      }
+
       const result = await uploadServiceData(
-        file, 
-        user.city, 
-        reportType, 
-        user.email, 
-        orgId, 
+        file,
+        user.city,
+        reportType,
+        user.email,
+        orgId,
         showroomId
       )
       

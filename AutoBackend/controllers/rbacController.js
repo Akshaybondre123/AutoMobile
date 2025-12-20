@@ -3,7 +3,9 @@ import Role from "../models/Role.js";
 import Permission from "../models/Permission.js";
 import UserRoleMapping from "../models/UserRoleMapping.js";
 import RolePermissionMapping from "../models/RolePermissionMapping.js";
+import Showroom from "../models/Showroom.js";
 import * as rbacService from "../services/rbacService.js";
+import { getShowroomIdFromReq, getOrgIdFromReq } from "../utils/requestIds.js";
 
 // ==================== USER OPERATIONS ====================
 
@@ -134,9 +136,12 @@ export const getUsersByOrganization = async (req, res) => {
 
 export const getAllRoles = async (req, res) => {
   try {
-    // Get showroom_id from query params or use default
-    const showroom_id = req.query.showroom_id || "674c5b3b8f8a5c2d4e6f7891";
-    
+    // Derive showroom_id from request (body, query or authenticated user)
+    const showroom_id = getShowroomIdFromReq(req);
+    if (!showroom_id) {
+      return res.status(400).json({ success: false, message: 'showroom_id is required' });
+    }
+
     const roles = await Role.find({ showroom_id }).select("-__v").lean();
 
     // Get permissions for each role
@@ -166,13 +171,17 @@ export const getAllRoles = async (req, res) => {
 
 export const createRole = async (req, res) => {
   try {
-    const { name, desc, permissions, showroom_id } = req.body;
+    const { name, desc, permissions } = req.body;
+    const showroom_id = getShowroomIdFromReq(req);
+    if (!showroom_id) {
+      return res.status(400).json({ success: false, message: 'showroom_id is required to create a role' });
+    }
 
     // Create role
     const role = new Role({
       name,
       desc,
-      showroom_id: showroom_id || "674c5b3b8f8a5c2d4e6f7891" // Default showroom_id
+      showroom_id
     });
 
     await role.save();
@@ -249,9 +258,11 @@ export const deleteRole = async (req, res) => {
 
 export const getAllPermissions = async (req, res) => {
   try {
-    // Get showroom_id from query params or use default
-    const showroom_id = req.query.showroom_id || "674c5b3b8f8a5c2d4e6f7891";
-    
+    const showroom_id = getShowroomIdFromReq(req);
+    if (!showroom_id) {
+      return res.status(400).json({ success: false, message: 'showroom_id is required' });
+    }
+
     const permissions = await Permission.find({ showroom_id }).select("-__v").lean();
 
     res.status(200).json({
@@ -270,12 +281,16 @@ export const getAllPermissions = async (req, res) => {
 
 export const createPermission = async (req, res) => {
   try {
-    const { permission_key, name, showroom_id } = req.body;
-    
+    const { permission_key, name } = req.body;
+    const showroom_id = getShowroomIdFromReq(req);
+    if (!showroom_id) {
+      return res.status(400).json({ success: false, message: 'showroom_id is required to create a permission' });
+    }
+
     const permission = new Permission({
       permission_key,
       name,
-      showroom_id: showroom_id || "674c5b3b8f8a5c2d4e6f7891" // Default showroom_id
+      showroom_id
     });
     
     await permission.save();
@@ -369,8 +384,11 @@ export const seedPermissions = async (req, res) => {
 
     const createdPermissions = [];
     
-    // Get showroom_id from request body or use default
-    const showroom_id = req.body.showroom_id || "674c5b3b8f8a5c2d4e6f7891";
+    // Get showroom_id from request body (preferred) or from user context
+    const showroom_id = getShowroomIdFromReq(req);
+    if (!showroom_id) {
+      return res.status(400).json({ success: false, message: 'showroom_id is required to seed permissions' });
+    }
     
     for (const permData of defaultPermissions) {
       try {
@@ -412,10 +430,10 @@ export const seedPermissions = async (req, res) => {
 
 export const assignRoleToUser = async (req, res) => {
   try {
-    const { userId, roleId } = req.body;
+    const { userId, roleId, showroom_id } = req.body;
     const currentUserId = req.user?._id;
 
-    const mapping = await rbacService.assignRoleToUser(userId, roleId, currentUserId);
+    const mapping = await rbacService.assignRoleToUser(userId, roleId, currentUserId, showroom_id);
 
     res.status(201).json({
       success: true,
@@ -552,8 +570,10 @@ export const getUserPermissionsByEmail = async (req, res) => {
     const { email } = req.params;
     console.log(`Fetching permissions for user email: ${email}`);
 
-    // Find user by email
-    const user = await User.findOne({ email }).lean();
+    // Find user by email and populate showroom to get city
+    const user = await User.findOne({ email })
+      .populate('showroom_id', 'showroom_city')
+      .lean();
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -566,13 +586,20 @@ export const getUserPermissionsByEmail = async (req, res) => {
     
     console.log(`Found ${permissions.length} permissions for user ${email}`);
     
+    // Extract showroom_id and showroom_city
+    // When populated, showroom_id is an object with _id and showroom_city
+    const showroomId = user.showroom_id?._id?.toString() || user.showroom_id?.toString() || null;
+    const showroomCity = user.showroom_id?.showroom_city || null;
+    
     res.status(200).json({
       success: true,
       data: {
         user: {
           _id: user._id,
           name: user.name,
-          email: user.email
+          email: user.email,
+          showroom_id: showroomId,
+          showroom_city: showroomCity
         },
         permissions: permissions
       }
@@ -672,6 +699,52 @@ export const getUserRolesSummary = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch user-roles summary',
+      error: error.message
+    });
+  }
+};
+
+// Get all cities from showrooms
+export const getAllCities = async (req, res) => {
+  try {
+    // Get distinct cities from showrooms
+    const cities = await Showroom.distinct('showroom_city', { 
+      showroom_city: { $exists: true, $ne: null, $ne: '' } 
+    });
+    
+    // Filter out "Unknown" and sort alphabetically
+    const validCities = cities
+      .filter(city => city && city.toLowerCase() !== 'unknown')
+      .sort((a, b) => a.localeCompare(b));
+    
+    res.status(200).json({
+      success: true,
+      data: validCities
+    });
+  } catch (error) {
+    console.error("Error fetching cities:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch cities",
+      error: error.message
+    });
+  }
+};
+
+// Get all showrooms
+export const getAllShowrooms = async (req, res) => {
+  try {
+    const showrooms = await Showroom.find().select("-__v").lean();
+    
+    res.status(200).json({
+      success: true,
+      data: showrooms
+    });
+  } catch (error) {
+    console.error("Error fetching showrooms:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch showrooms",
       error: error.message
     });
   }

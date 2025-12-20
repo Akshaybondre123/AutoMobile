@@ -16,16 +16,51 @@ export function Sidebar() {
 
   if (!user) return null
 
-  const isGM = user.role === "general_manager"
-  const isSM = user.role === "service_manager"
-  const isSA = user.role === "service_advisor"
-  const isBDM = user.role === "body_shop_manager"
+  // Helper function to check if user is owner (handles formatted role strings like "Owner | CRM | BSM")
+  const isOwner = () => {
+    if (!user?.role) return false
+    const roleStr = String(user.role).toLowerCase().trim()
+    // Check if role contains "owner" (handles "Owner", "owner", "Owner | ...", etc.)
+    const roleParts = roleStr.split('|').map(p => p.trim())
+    return roleParts.some(part => part === 'owner') || roleStr.includes('owner')
+  }
+  
+  // Only owner has fixed role - all others use permissions
+  const isGM = isOwner()
+  const isSM = user.role === "service_manager" || user.role?.toLowerCase().includes("service_manager")
+  const isSA = user.role === "service_advisor" || user.role?.toLowerCase().includes("service_advisor")
+  const isBDM = user.role === "body_shop_manager" || user.role?.toLowerCase().includes("body_shop_manager")
+  
+  // Determine dashboard based on permissions (not role) - matches main dashboard routing logic
+  // Check for GM-level permissions (manage_users, manage_roles, gm_targets)
+  const hasGMPermissions = hasPermission('manage_users') || hasPermission('manage_roles') || hasPermission('gm_targets')
+  
+  // Check for SM-level permissions (dashboard access for billing, operations, warranty, service_booking, repair_order)
+  const hasSMPermissions = hasPermission('ro_billing_dashboard') || hasPermission('operations_dashboard') || 
+                           hasPermission('warranty_dashboard') || hasPermission('service_booking_dashboard') ||
+                           hasPermission('repair_order_list_dashboard') || hasPermission('ro_billing_upload') ||
+                           hasPermission('operations_upload') || hasPermission('warranty_upload') || 
+                           hasPermission('service_booking_upload') || hasPermission('upload')
+  
+  // Determine which dashboard to link to (priority: GM permissions > SM permissions > overview > role fallback)
+  let dashboardHref = "/dashboard/sa" // Default fallback
+  if (isGM || hasGMPermissions) {
+    dashboardHref = "/dashboard/gm"
+  } else if (hasSMPermissions) {
+    dashboardHref = "/dashboard/sm"
+  } else if (hasPermission('overview')) {
+    dashboardHref = "/dashboard/gm" // overview routes to GM
+  } else if (isSM) {
+    dashboardHref = "/dashboard/sm"
+  } else if (isBDM) {
+    dashboardHref = "/dashboard/bdm"
+  }
 
   const navItems = [
-    // Main Dashboards - Always show based on role
+    // Main Dashboards - Route based on permissions (owner is only fixed role)
     {
       label: "Dashboard",
-      href: isGM ? "/dashboard/gm" : isSM ? "/dashboard/sm" : isBDM ? "/dashboard/bdm" : "/dashboard/sa",
+      href: dashboardHref,
       icon: BarChart3,
       show: true, // Everyone can see their respective dashboard
     },
@@ -60,15 +95,16 @@ export function Sidebar() {
       label: "User Access",
       href: "/dashboard/gm/user-access",
       icon: Settings,
+      // Owners should always see User Access (or anyone with manage_users permission)
       show: isGM || hasPermission("manage_users"),
     },
     
-    // Upload - Single permission for all uploads (SM/SA only, not GM)
+    // Upload - Single permission for all uploads (anyone with upload permission, not GM)
     {
       label: "Upload",
       href: "/dashboard/sm/upload",
       icon: Upload,
-      show: (isSM || isSA) && hasPermission("upload"),
+      show: !isGM && hasPermission("upload"),
     },
     
     // Reports - Show only for SM/SA, not GM (GM has overview in their dashboard)

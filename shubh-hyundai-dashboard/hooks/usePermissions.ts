@@ -3,6 +3,16 @@
 import { useState, useEffect, useCallback } from "react"
 import { useAuth } from "@/lib/auth-context"
 import { getApiUrl } from "@/lib/config"
+import { useUserApiData } from "@/hooks/useGlobalApiData"
+import { useAppDispatch } from "@/lib/store/hooks"
+import { setUser } from "@/lib/store/slices/authSlice"
+
+// Shared across all hook instances to avoid duplicate network calls
+const permissionCache = new Map<string, { timestamp: number; perms: string[] }>()
+const inFlight = new Map<string, Promise<string[]>>()
+const lastFetchTs = new Map<string, number>()
+const CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
+const FETCH_COOLDOWN_MS = 5_000 // 5 seconds
 
 interface Permission {
   id: string
@@ -12,68 +22,129 @@ interface Permission {
 
 export function usePermissions() {
   const { user } = useAuth()
+  const dispatch = useAppDispatch()
   const [permissions, setPermissions] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [lastFetchedEmail, setLastFetchedEmail] = useState<string | null>(null)
 
   useEffect(() => {
+    // Only run on client side
+    if (typeof window === 'undefined') {
+      return
+    }
+
     if (user) {
-      // Check if we already cached permissions for this user
-      if (lastFetchedEmail === user.email && permissions.length > 0) {
-        setIsLoading(false)
-        return
+      // ✅ IMMEDIATE ACCESS: Set role-based permissions synchronously first for owner-managed flows
+      const rolePermissions = getWorkingRoleBasedPermissions(user.role)
+      if (rolePermissions.length > 0) {
+        setPermissions(rolePermissions)
       }
+      
+      // Then enhance with **fresh** database permissions asynchronously
+      // (No long-lived cache so new permissions apply immediately after GM updates)
       fetchUserPermissions()
     } else {
       setPermissions([])
       setIsLoading(false)
-      setLastFetchedEmail(null)
     }
   }, [user])
 
   const fetchUserPermissions = useCallback(async () => {
     if (!user) return
 
-    try {
+    const fetchKey = `${user.email}`
+    const now = Date.now()
+
+    // Serve from cache if still fresh
+    const cached = permissionCache.get(fetchKey)
+    if (cached && now - cached.timestamp < CACHE_TTL_MS) {
+      console.log("📦 Using cached permissions", fetchKey)
+      setPermissions(cached.perms)
+      setIsLoading(false)
+      return
+    }
+
+    // Cooldown: avoid spamming the same permission endpoint within a short window
+    const lastTs = lastFetchTs.get(fetchKey) || 0
+    if (now - lastTs < FETCH_COOLDOWN_MS && permissions.length > 0) {
+      console.log("⏭️ Skipping permission fetch (cooldown active)", fetchKey)
+      return
+    }
+
+    // Prevent parallel fetches
+    const inProgress = inFlight.get(fetchKey)
+    if (inProgress) {
+      console.log("⏭️ Joining in-flight permission fetch", fetchKey)
+      try {
+        const perms = await inProgress
+        setPermissions(perms)
+      } finally {
+        setIsLoading(false)
+      }
+      return
+    }
+
+    lastFetchTs.set(fetchKey, now)
+
+    const promise = (async () => {
+      try {
+      // Always show a quick loading state when re-fetching from backend
       setIsLoading(true)
       setError(null)
 
-      // Check for valid cache
-      const cachedPermissions = localStorage.getItem(`permissions_${user.email}`)
-      if (cachedPermissions) {
-        const parsed = JSON.parse(cachedPermissions)
-        const cacheAge = Date.now() - parsed.timestamp
-        
-        // Use cache if less than 5 minutes old
-        if (cacheAge < 300000) {
-          setPermissions(parsed.permissions)
-          setLastFetchedEmail(user.email)
-          setIsLoading(false)
-          return
-        }
-      }
+      // Role permissions may already be set in useEffect for immediate access
+      // This function enhances/replaces them with latest database permissions
 
-      // Set role permissions for recognized roles
-      const rolePermissions = getWorkingRoleBasedPermissions(user.role)
-      
-      if (rolePermissions.length > 0) {
-        setPermissions(rolePermissions)
-        setLastFetchedEmail(user.email)
-      }
-      // For custom roles, don't set empty permissions yet - wait for database API
-
-      // Try to enhance with database permissions (optional)
+      // Try to enhance with database permissions (primary path)
       try {
+        // Ensure we're on client side before making fetch
+        if (typeof window === 'undefined') {
+          console.log("⏭️ Skipping fetch - server-side rendering")
+          return permissions
+        }
+
         const directApiUrl = getApiUrl(`/api/rbac/users/email/${encodeURIComponent(user.email)}/permissions`)
         console.log("🔍 Fetching permissions for:", user.email, "Role:", user.role)
         console.log("🌐 API URL:", directApiUrl)
-        const directResponse = await fetch(directApiUrl, { cache: 'no-cache' })
+        console.log("🌍 Window location:", typeof window !== 'undefined' ? window.location.href : 'N/A')
+        console.log("🔧 Environment:", {
+          NODE_ENV: process.env.NODE_ENV,
+          NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'not set'
+        })
+        
+        const directResponse = await fetch(directApiUrl, { 
+          cache: 'no-cache',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          mode: 'cors' // Explicitly set CORS mode
+        })
         console.log("📡 API Response Status:", directResponse.status)
         
         if (directResponse.ok) {
           const directData = await directResponse.json()
           console.log("📦 Full API Response:", JSON.stringify(directData, null, 2))
+          
+          // Extract user data from response (includes showroom_id and showroom_city)
+          const userDataFromApi = directData.data?.user
+          if (userDataFromApi && user) {
+            console.log("👤 User data from permissions API:", userDataFromApi)
+            // Update user in auth context with showroom_id and showroom_city if they're present
+            if (userDataFromApi.showroom_id !== undefined || userDataFromApi.showroom_city !== undefined) {
+              console.log("📍 Updating user with showroom data:", {
+                showroom_id: userDataFromApi.showroom_id,
+                showroom_city: userDataFromApi.showroom_city
+              })
+              // Update the user object with showroom data
+              const updatedUser = {
+                ...user,
+                showroom_id: userDataFromApi.showroom_id || user.showroom_id,
+                showroom_city: userDataFromApi.showroom_city || user.showroom_city
+              }
+              dispatch(setUser(updatedUser))
+            }
+          }
           
           // Try multiple ways to extract permissions
           let directPermissions = directData.data?.permissions || directData.permissions || directData.data || []
@@ -101,42 +172,73 @@ export function usePermissions() {
             if (directPermissionKeys.length > 0) {
               console.log("✅ Setting", directPermissionKeys.length, "permissions from database:", directPermissionKeys)
               setPermissions(directPermissionKeys)
-              setLastFetchedEmail(user.email)
-              localStorage.setItem(`permissions_${user.email}`, JSON.stringify({
-                permissions: directPermissionKeys,
-                timestamp: Date.now()
-              }))
+              permissionCache.set(fetchKey, { timestamp: Date.now(), perms: directPermissionKeys })
               setIsLoading(false)
-              return
-            } else {
-              console.log("⚠️ Permission keys are empty after extraction")
+              return directPermissionKeys
             }
           } else {
             console.log("⚠️ Database returned 0 permissions for user:", user.email)
-            // Database returned no permissions - only set empty if role is also unrecognized
-            if (rolePermissions.length === 0) {
+            // Database returned no permissions - get current role permissions
+            const currentRolePermissions = getWorkingRoleBasedPermissions(user.role)
+            if (currentRolePermissions.length === 0) {
               console.log("🚫 Setting empty permissions - custom role with no database permissions")
               setPermissions([])
-              localStorage.setItem(`permissions_${user.email}`, JSON.stringify({
-                permissions: [],
-                timestamp: Date.now()
-              }))
+              permissionCache.set(fetchKey, { timestamp: Date.now(), perms: [] })
             } else {
-              console.log("✅ Keeping role-based permissions:", rolePermissions)
+              console.log("✅ Keeping role-based permissions:", currentRolePermissions)
             }
-            return
+            return currentRolePermissions
           }
         }
-      } catch (directErr) {
+      } catch (directErr: any) {
         console.error("❌ Direct API error:", directErr)
-        // Try fallback
+        console.error("❌ Error type:", directErr?.constructor?.name)
+        console.error("❌ Error message:", directErr?.message)
+        
+        // Check if it's a network error (CORS, connection refused, etc.)
+        const isFetchError = directErr instanceof TypeError && (
+          directErr.message.includes('fetch') || 
+          directErr.message.includes('Failed to fetch') ||
+          directErr.message.includes('NetworkError') ||
+          directErr.message.includes('Network request failed')
+        )
+        
+        if (isFetchError) {
+          const apiUrl = getApiUrl(`/api/rbac/users/email/${encodeURIComponent(user.email)}/permissions`)
+          console.error("🌐 Network error - API may be unreachable or CORS issue")
+          console.error("🔗 Attempted URL:", apiUrl)
+          console.error("💡 Is backend running? Check:", apiUrl)
+          setError(`Network error: Unable to reach API at ${apiUrl}. Please check your connection and that the backend is running.`)
+          
+          // Fall back to role-based permissions for now
+          const fallbackPerms = getWorkingRoleBasedPermissions(user.role)
+          if (fallbackPerms.length > 0) {
+            console.log("✅ Using role-based permissions as fallback")
+            setPermissions(fallbackPerms)
+            return fallbackPerms
+          }
+        }
+        // Try fallback API
       }
       
       // FALLBACK: Try summary API
       try {
-        const summaryResponse = await fetch(getApiUrl("/api/rbac/user-roles-summary"))
+        // Ensure we're on client side before making fetch
+        if (typeof window === 'undefined') {
+          console.log("⏭️ Skipping fallback fetch - server-side rendering")
+          const fallbackPerms = getWorkingRoleBasedPermissions(user.role)
+          return fallbackPerms
+        }
+
+        const summaryResponse = await fetch(getApiUrl("/api/rbac/user-roles-summary"), {
+          cache: 'no-cache',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        })
         
-        if (summaryResponse.ok) {
+  if (summaryResponse.ok) {
           const summaryData = await summaryResponse.json()
           console.log("📦 Summary API Response Data:", summaryData)
           
@@ -195,34 +297,18 @@ export function usePermissions() {
             
             if (allPermissions.length > 0) {
               // Only update if database permissions are different/better
+              const currentRolePermissions = getWorkingRoleBasedPermissions(user.role)
               console.log("📊 Comparing permissions:")
-              console.log("   Role-based:", rolePermissions)
+              console.log("   Role-based:", currentRolePermissions)
               console.log("   Database:", allPermissions)
               
-              if (allPermissions.length >= rolePermissions.length) {
+              if (allPermissions.length >= currentRolePermissions.length) {
                 console.log("✅ Using enhanced database permissions")
                 setPermissions(allPermissions)
-                
-                // Cache the enhanced result
-                localStorage.setItem(`permissions_${user.email}`, JSON.stringify({
-                  permissions: allPermissions,
-                  timestamp: Date.now()
-                }))
+                permissionCache.set(fetchKey, { timestamp: Date.now(), perms: allPermissions })
               } else {
                 console.log("📊 Role-based permissions are better, keeping them")
-                // Cache the role-based result
-                localStorage.setItem(`permissions_${user.email}`, JSON.stringify({
-                  permissions: rolePermissions,
-                  timestamp: Date.now()
-                }))
               }
-            } else {
-              console.log("⚠️ No permissions found in database roles")
-              // Cache the role-based result
-              localStorage.setItem(`permissions_${user.email}`, JSON.stringify({
-                permissions: rolePermissions,
-                timestamp: Date.now()
-              }))
             }
           } else {
             console.log("⚠️ User has no roles assigned in database")
@@ -230,64 +316,82 @@ export function usePermissions() {
             // This forces them to contact admin for proper role assignment
             console.log("🚫 Setting empty permissions - user needs admin to assign roles")
             setPermissions([])
-            localStorage.setItem(`permissions_${user.email}`, JSON.stringify({
-              permissions: [],
-              timestamp: Date.now()
-            }))
           }
         } else {
           console.log("📊 User not found in database")
           // ✅ NEW: If user is not in database at all, check if they have a valid role
-          // Only give role-based permissions if they have a recognized role
-          if (user.role === "general_manager") {
-            console.log("✅ User is GM but not in database, giving role-based permissions")
-            // Cache the role-based result
-            localStorage.setItem(`permissions_${user.email}`, JSON.stringify({
-              permissions: rolePermissions,
-              timestamp: Date.now()
-            }))
+          // Only give role-based permissions if they have a recognized role (owner)
+          if (String(user.role) === "owner") {
+            console.log("✅ User is owner but not in database, giving role-based permissions")
+            const currentRolePermissions = getWorkingRoleBasedPermissions(user.role)
+            permissionCache.set(fetchKey, { timestamp: Date.now(), perms: currentRolePermissions })
           } else {
-            console.log("🚫 User not in database and not GM - setting empty permissions")
+            console.log("🚫 User not in database and not owner - setting empty permissions")
             setPermissions([])
-            localStorage.setItem(`permissions_${user.email}`, JSON.stringify({
-              permissions: [],
-              timestamp: Date.now()
-            }))
+            permissionCache.set(fetchKey, { timestamp: Date.now(), perms: [] })
           }
         }
         } else {
           console.log("⚠️ Summary API failed, keeping role-based permissions")
-          // Cache the role-based result
-          localStorage.setItem(`permissions_${user.email}`, JSON.stringify({
-            permissions: rolePermissions,
-            timestamp: Date.now()
-          }))
+          const currentRolePermissions = getWorkingRoleBasedPermissions(user.role)
+          setPermissions(currentRolePermissions)
         }
-      } catch (summaryErr) {
-        console.log("⚠️ Summary API error, keeping role-based permissions:", summaryErr)
-        // Cache the role-based result
-        localStorage.setItem(`permissions_${user.email}`, JSON.stringify({
-          permissions: rolePermissions,
-          timestamp: Date.now()
-        }))
+      } catch (summaryErr: any) {
+        console.error("❌ Summary API error:", summaryErr)
+        // Check if it's a network error
+        if (summaryErr instanceof TypeError && summaryErr.message.includes('fetch')) {
+          console.error("🌐 Network error - Fallback API also unreachable")
+          setError(`Network error: Unable to reach API. Please check your connection and that the backend is running.`)
+        }
+        // Fall back to role-based permissions
+        const currentRolePermissions = getWorkingRoleBasedPermissions(user.role)
+        if (currentRolePermissions.length > 0) {
+          console.log("✅ Using role-based permissions as fallback")
+          setPermissions(currentRolePermissions)
+          return currentRolePermissions
+        }
       }
 
-    } catch (err) {
+    } catch (err: any) {
       console.error("❌ Error in permission fetching:", err)
-      // ✅ UPDATED: Only fallback to role permissions for general managers
+      setError(err?.message || "Failed to fetch permissions")
+      
+      // Check if it's a network error
+      if (err instanceof TypeError && err.message.includes('fetch')) {
+        console.error("🌐 Network/CORS error detected")
+        setError("Network error: Unable to reach API. Please check your connection and that the backend is running.")
+      }
+      
+      // ✅ UPDATED: Only fallback to role permissions for owners
       // Service managers and others need database permissions
-      if (user.role === "general_manager") {
-        console.log("✅ Error occurred but user is GM, giving role-based permissions")
+      if (String(user.role) === "owner") {
+        console.log("✅ Error occurred but user is owner, giving role-based permissions")
         const fallbackPermissions = getWorkingRoleBasedPermissions(user.role)
         const finalFallback = fallbackPermissions.length > 0 ? fallbackPermissions : getBasicPermissions()
         setPermissions(finalFallback)
       } else {
-        console.log("🚫 Error occurred - only GMs get fallback permissions, setting empty permissions")
-        setPermissions([])
+        console.log("🚫 Error occurred - only owners get fallback permissions, setting empty permissions")
+        // Still set role-based permissions as a last resort for other roles
+        const rolePerms = getWorkingRoleBasedPermissions(user.role)
+        setPermissions(rolePerms.length > 0 ? rolePerms : [])
       }
-      setLastFetchedEmail(user.email)
     } finally {
       setIsLoading(false)
+    }
+
+    const cachedPermissions = permissionCache.get(fetchKey)?.perms
+    if (Array.isArray(cachedPermissions)) {
+      return cachedPermissions
+    }
+
+    return Array.isArray(permissions) ? permissions : []
+    })()
+
+    inFlight.set(fetchKey, promise)
+    try {
+      await promise
+    } finally {
+      inFlight.delete(fetchKey)
     }
   }, [user])
 
@@ -303,7 +407,33 @@ export function usePermissions() {
   }
 
   const getWorkingRoleBasedPermissions = (role: string): string[] => {
-    switch (role) {
+    // Only owner gets GM-level role-based fallbacks by default.
+    // All other users must have explicit permissions from database.
+    const roleStr = String(role || "").toLowerCase()
+    if (roleStr === "owner") {
+      return [
+        "dashboard",
+        "overview",
+        "ro_billing_dashboard",
+        "operations_dashboard",
+        "warranty_dashboard",
+        "service_booking_dashboard",
+        "manage_users",
+        "manage_roles",
+        "ro_billing_upload",
+        "operations_upload",
+        "warranty_upload",
+        "service_booking_upload",
+        "ro_billing_report",
+        "operations_report",
+        "warranty_report",
+        "service_booking_report",
+        "target_report"
+      ]
+    }
+    
+    // Fallback for other roles (for backward compatibility)
+    switch (roleStr) {
       case "general_manager":
         return [
           "dashboard",
@@ -350,7 +480,17 @@ export function usePermissions() {
   }
 
   const hasPermission = useCallback((permissionKey: string): boolean => {
-    return permissions.includes(permissionKey)
+    // Extra safety: handle any unexpected non-array state
+    if (!Array.isArray(permissions)) {
+      console.warn("⚠️ hasPermission: permissions is not an array:", permissions)
+      return false
+    }
+    const hasIt = permissions.includes(permissionKey)
+    // Debug logging for permission checks (only log if not found to avoid spam)
+    if (!hasIt && permissions.length > 0) {
+      console.log(`🔍 Permission check: "${permissionKey}" - Available permissions:`, permissions)
+    }
+    return hasIt
   }, [permissions])
 
   const hasAnyPermission = useCallback((permissionKeys: string[]): boolean => {
@@ -360,8 +500,6 @@ export function usePermissions() {
   const refetchPermissions = useCallback(async () => {
     // Clear cache and refetch
     if (user) {
-      localStorage.removeItem(`permissions_${user.email}`)
-      setLastFetchedEmail(null)
       await fetchUserPermissions()
     }
   }, [user, fetchUserPermissions])
@@ -369,23 +507,13 @@ export function usePermissions() {
   const debugPermissions = () => {
     console.log("🐛 Permission Debug Info:")
     console.log("- User:", user?.email, "Role:", user?.role)
-    console.log("- Permissions:", permissions)
-    console.log("- Permission Count:", permissions.length)
+    const permissionList = Array.isArray(permissions) ? permissions : []
+    console.log("- Permissions:", permissionList)
+    console.log("- Permission Count:", permissionList.length)
     console.log("- Is Loading:", isLoading)
-    console.log("- Last Fetched Email:", lastFetchedEmail)
     console.log("- Has GM Permissions:", hasPermission('manage_users') || hasPermission('manage_roles'))
     console.log("- Has SM Permissions:", hasPermission('ro_billing_dashboard') || hasPermission('operations_dashboard'))
     console.log("- Has SA Permissions:", hasPermission('dashboard') || hasPermission('overview'))
-    console.log("- Cache Check:")
-    const cached = localStorage.getItem(`permissions_${user?.email}`)
-    if (cached) {
-      const parsed = JSON.parse(cached)
-      console.log("  - Cached permissions:", parsed.permissions)
-      console.log("  - Cache age:", (Date.now() - parsed.timestamp) / 1000, "seconds")
-    } else {
-      console.log("  - No cache found")
-    }
-    
     // Test direct API call
     if (user?.email) {
       console.log("🧪 Testing direct API call...")
@@ -407,36 +535,10 @@ export function usePermissions() {
   const forceRefresh = async () => {
     if (user?.email) {
       console.log("🔄 Force refreshing permissions...")
-      localStorage.removeItem(`permissions_${user.email}`)
       setPermissions([])
-      setLastFetchedEmail(null)
       await fetchUserPermissions()
     }
   }
-
-  // Clear old cached permissions on component mount (once)
-  useEffect(() => {
-    const allKeys = Object.keys(localStorage)
-    allKeys.forEach(key => {
-      if (key.startsWith('permissions_')) {
-        const cached = localStorage.getItem(key)
-        if (cached) {
-          try {
-            const parsed = JSON.parse(cached)
-            const cacheAge = Date.now() - parsed.timestamp
-            // Clear cache older than 5 minutes OR if permissions are empty
-            if (cacheAge > 300000 || (parsed.permissions && parsed.permissions.length === 0)) {
-              console.log("🗑️ Clearing stale/empty permission cache:", key)
-              localStorage.removeItem(key)
-            }
-          } catch (e) {
-            // Invalid cache, remove it
-            localStorage.removeItem(key)
-          }
-        }
-      }
-    })
-  }, [])
 
   const testRBACAPI = async () => {
     if (!user) return
@@ -466,22 +568,7 @@ export function usePermissions() {
     
     console.log("🧹 Clearing cache and forcing refresh for user:", user.email)
     
-    // Clear ALL permission caches to be safe
-    const allKeys = Object.keys(localStorage)
-    let clearedCount = 0
-    
-    allKeys.forEach(key => {
-      if (key.startsWith('permissions_')) {
-        localStorage.removeItem(key)
-        clearedCount++
-        console.log("🗑️ Cleared cache:", key)
-      }
-    })
-    
-    console.log(`✅ Cleared ${clearedCount} permission cache entries`)
-    
     // Reset state completely
-    setLastFetchedEmail("")
     setPermissions([])
     setIsLoading(true)
     setError(null)

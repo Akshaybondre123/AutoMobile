@@ -17,7 +17,8 @@ const rolePermissionMappingSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true,
-      default: "674c5b3b8f8a5c2d4e6f7891" // Default showroom_id
+      // Read default showroom id from environment to avoid hardcoded values
+      default: process.env.DEFAULT_SHOWROOM_ID
     },
     meta: {
       type: mongoose.Schema.Types.Mixed,

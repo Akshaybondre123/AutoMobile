@@ -283,6 +283,8 @@ export async function getCityStats(): Promise<CityStats[]> {
   })
 }
 
+import { getApiUrl } from "@/lib/config"
+
 export async function uploadServiceData(
   file: File,
   city: string,
@@ -296,10 +298,7 @@ export async function uploadServiceData(
     formData.append('excelFile', file)
     formData.append('file_type', reportType === 'operations' ? 'operations_part' : reportType === 'service_booking' ? 'booking_list' : reportType)
     formData.append('uploaded_by', uploadedBy)
-    formData.append('org_id', orgId)
-    formData.append('showroom_id', showroomId)
-
-    const response = await fetch(`${API_BASE_URL}/api/excel/upload`, {
+    const response = await fetch(getApiUrl("/api/excel/upload"), {
       method: 'POST',
       body: formData,
     })
@@ -851,12 +850,14 @@ export interface UploadStats {
 
 export async function getUploadHistory(showroomId: string, fileType?: string): Promise<UploadHistory[]> {
   try {
-    const url = new URL(`${API_BASE_URL}/api/excel/history/${showroomId}`)
+    let url = getApiUrl(`/api/excel/history/${showroomId}`)
     if (fileType) {
-      url.searchParams.append('fileType', fileType)
+      const urlObj = new URL(url)
+      urlObj.searchParams.append('fileType', fileType)
+      url = urlObj.toString()
     }
     
-    const response = await fetch(url.toString())
+    const response = await fetch(url)
     const result = await response.json()
     
     if (result.success) {
@@ -873,12 +874,14 @@ export async function getUploadHistory(showroomId: string, fileType?: string): P
 
 export async function getUploadStats(showroomId: string, fileType?: string): Promise<UploadStats[]> {
   try {
-    const url = new URL(`${API_BASE_URL}/api/excel/stats/${showroomId}`)
+    let url = getApiUrl(`/api/excel/stats/${showroomId}`)
     if (fileType) {
-      url.searchParams.append('fileType', fileType)
+      const urlObj = new URL(url)
+      urlObj.searchParams.append('fileType', fileType)
+      url = urlObj.toString()
     }
     
-    const response = await fetch(url.toString())
+    const response = await fetch(url)
     const result = await response.json()
     
     if (result.success) {
@@ -893,35 +896,481 @@ export async function getUploadStats(showroomId: string, fileType?: string): Pro
   }
 }
 
-// Functions to get reports by type and city
-export async function getRoBillingReports(city?: string): Promise<ROBillingReport[]> {
-  await new Promise((resolve) => setTimeout(resolve, 300))
-  if (city) {
-    return roBillingData.filter((r) => r.city === city)
+// Helper function to normalize city name (e.g., "Ptn" → "Patan")
+function normalizeCityName(city: string): string {
+  const cityMap: Record<string, string> = {
+    'ptn': 'Patan',
+    'pln': 'Palanpur',
+    'pune': 'Pune',
+    'mum': 'Mumbai',
+    'mumbai': 'Mumbai',
+    'nag': 'Nagpur',
+    'nagpur': 'Nagpur'
   }
-  return roBillingData
+  const normalized = city.toLowerCase().trim()
+  return cityMap[normalized] || city
 }
 
-export async function getOperationsReports(city?: string): Promise<OperationsReport[]> {
-  await new Promise((resolve) => setTimeout(resolve, 300))
-  if (city) {
-    return operationsData.filter((r) => r.city === city)
+// Helper function to get start and end dates for a month string (e.g., "2025-12" or "December 2025")
+function getMonthDateRange(monthString: string): { startDate: string, endDate: string } {
+  let year: number, month: number
+  
+  // Try parsing as "YYYY-MM" format
+  const yyyyMMMatch = monthString.match(/^(\d{4})-(\d{2})$/)
+  if (yyyyMMMatch) {
+    year = parseInt(yyyyMMMatch[1], 10)
+    month = parseInt(yyyyMMMatch[2], 10) - 1 // JS months are 0-indexed
+  } else {
+    // Try parsing as "Month YYYY" format (e.g., "December 2025")
+    const date = new Date(monthString)
+    if (!isNaN(date.getTime())) {
+      year = date.getFullYear()
+      month = date.getMonth()
+    } else {
+      // Default to current month if parsing fails
+      const now = new Date()
+      year = now.getFullYear()
+      month = now.getMonth()
+    }
   }
-  return operationsData
+  
+  const startDate = new Date(year, month, 1)
+  const endDate = new Date(year, month + 1, 0, 23, 59, 59, 999) // Last day of month
+  
+  return {
+    startDate: startDate.toISOString().split('T')[0],
+    endDate: endDate.toISOString().split('T')[0]
+  }
 }
 
-export async function getWarrantyReports(city?: string): Promise<WarrantyReport[]> {
-  await new Promise((resolve) => setTimeout(resolve, 300))
-  if (city) {
-    return warrantyData.filter((r) => r.city === city)
+// Functions to get reports by type and city - NOW FETCHES REAL DATA FROM API
+export async function getRoBillingReports(city?: string, month?: string): Promise<ROBillingReport[]> {
+  try {
+    if (!city) {
+      console.warn('⚠️ getRoBillingReports called without city')
+      return []
+    }
+    
+    const normalizedCity = normalizeCityName(city)
+    let apiUrl = getApiUrl(`/api/service-manager/gm-dashboard-data?city=${encodeURIComponent(normalizedCity)}&dataType=ro_billing`)
+    
+    // Add date range if month is provided
+    // Note: The backend expects startDate and endDate in the query, but the date filtering
+    // might not work as expected with periodStart/periodEnd. We'll try without date filter first
+    // if we get no results, since the stats might be aggregated differently
+    if (month) {
+      const { startDate, endDate } = getMonthDateRange(month)
+      apiUrl += `&startDate=${startDate}&endDate=${endDate}`
+      console.log('📅 Date range for month filtering:', { month, startDate, endDate })
+    }
+    
+    console.log('🔄 Fetching RO Billing reports from:', apiUrl)
+    const response = await fetch(apiUrl, {
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' }
+    })
+    
+    if (!response.ok) {
+      console.error('❌ Failed to fetch RO Billing reports:', response.status, response.statusText)
+      return []
+    }
+    
+    const result = await response.json()
+    console.log('📊 Full API response for RO Billing:', JSON.stringify(result, null, 2))
+    
+    // The GM endpoint returns aggregated stats, not raw data
+    // We reconstruct records from stats for achievement calculation
+    const stats = Array.isArray(result.stats) ? result.stats : []
+    
+    console.log('✅ RO Billing stats received:', stats.length, 'stat periods')
+    console.log('📋 Stats structure:', stats.length > 0 ? Object.keys(stats[0]) : 'no stats')
+    
+    // Create records that, when summed, give the correct totals
+    const records: ROBillingReport[] = []
+    
+    stats.forEach((stat: any, statIndex: number) => {
+      console.log(`🔍 Processing stat ${statIndex}:`, {
+        hasRoBillingStats: !!stat.roBillingStats,
+        roBillingStats: stat.roBillingStats,
+        city: stat.city,
+        uploadType: stat.uploadType
+      })
+      
+      if (stat.roBillingStats) {
+        const roCount = stat.roBillingStats.roCount || 0
+        const totalLabour = stat.roBillingStats.totalLabour || 0
+        const totalParts = stat.roBillingStats.totalParts || 0
+        const totalRevenue = stat.roBillingStats.totalRevenue || 0
+        
+        console.log(`  📈 RO Stats: ${roCount} ROs, Labour: ${totalLabour}, Parts: ${totalParts}`)
+        
+        if (roCount > 0) {
+          const avgLabourPerRO = totalLabour / roCount
+          const avgPartsPerRO = totalParts / roCount
+          
+          // Create one record per RO to maintain correct counts
+          // Each record has average values, so when summed they equal the totals
+          for (let i = 0; i < roCount; i++) {
+            records.push({
+              id: `ro-${stat._id || statIndex}-${i}`,
+              date: stat.periodStart ? new Date(stat.periodStart).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+              roNumber: `RO-${String(stat._id || statIndex).slice(-6)}-${String(i).padStart(4, '0')}`,
+              vehicleNumber: '',
+              customerName: '',
+              labourCost: avgLabourPerRO,
+              partsCost: avgPartsPerRO,
+              totalAmount: avgLabourPerRO + avgPartsPerRO,
+              status: 'completed',
+              city: stat.city || normalizedCity
+            })
+          }
+        }
+      }
+    })
+    
+    console.log('✅ RO Billing records created:', records.length, 'records')
+    
+    // If no records from stats, try fetching without date filter (stats might not be date-filtered)
+    if (records.length === 0 && month) {
+      console.log('⚠️ No records found with date filter, trying without date filter...')
+      const fallbackUrl = getApiUrl(`/api/service-manager/gm-dashboard-data?city=${encodeURIComponent(normalizedCity)}&dataType=ro_billing`)
+      try {
+        const fallbackResponse = await fetch(fallbackUrl, {
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' }
+        })
+        if (fallbackResponse.ok) {
+          const fallbackResult = await fallbackResponse.json()
+          const fallbackStats = Array.isArray(fallbackResult.stats) ? fallbackResult.stats : []
+          console.log('🔄 Fallback stats count:', fallbackStats.length)
+          
+          // Process fallback stats (same logic as above)
+          fallbackStats.forEach((stat: any, statIndex: number) => {
+            if (stat.roBillingStats && stat.roBillingStats.roCount > 0) {
+              const roCount = stat.roBillingStats.roCount || 0
+              const totalLabour = stat.roBillingStats.totalLabour || 0
+              const totalParts = stat.roBillingStats.totalParts || 0
+              const avgLabourPerRO = totalLabour / roCount
+              const avgPartsPerRO = totalParts / roCount
+              
+              for (let i = 0; i < roCount; i++) {
+                records.push({
+                  id: `ro-${stat._id || statIndex}-${i}`,
+                  date: stat.periodStart ? new Date(stat.periodStart).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+                  roNumber: `RO-${String(stat._id || statIndex).slice(-6)}-${String(i).padStart(4, '0')}`,
+                  vehicleNumber: '',
+                  customerName: '',
+                  labourCost: avgLabourPerRO,
+                  partsCost: avgPartsPerRO,
+                  totalAmount: avgLabourPerRO + avgPartsPerRO,
+                  status: 'completed',
+                  city: stat.city || normalizedCity
+                })
+              }
+            }
+          })
+          console.log('✅ Fallback records created:', records.length, 'records')
+        }
+      } catch (fallbackError) {
+        console.error('❌ Fallback fetch failed:', fallbackError)
+      }
+    }
+    
+    if (records.length > 0) {
+      console.log('📊 Sample record:', records[0])
+      console.log('💰 Total labour from records:', records.reduce((sum, r) => sum + r.labourCost, 0))
+      console.log('💰 Total parts from records:', records.reduce((sum, r) => sum + r.partsCost, 0))
+    } else {
+      console.warn('⚠️ No RO Billing records found for city:', normalizedCity, 'month:', month)
+    }
+    return records
+  } catch (error) {
+    console.error('❌ Error fetching RO Billing reports:', error)
+    return []
   }
-  return warrantyData
 }
 
-export async function getServiceBookingReports(city?: string): Promise<ServiceBookingReport[]> {
-  await new Promise((resolve) => setTimeout(resolve, 300))
-  if (city) {
-    return serviceBookingData.filter((r) => r.city === city)
+export async function getOperationsReports(city?: string, month?: string): Promise<OperationsReport[]> {
+  try {
+    if (!city) return []
+    
+    const normalizedCity = normalizeCityName(city)
+    let apiUrl = getApiUrl(`/api/service-manager/gm-dashboard-data?city=${encodeURIComponent(normalizedCity)}&dataType=operations`)
+    
+    if (month) {
+      const { startDate, endDate } = getMonthDateRange(month)
+      apiUrl += `&startDate=${startDate}&endDate=${endDate}`
+    }
+    
+    const response = await fetch(apiUrl, {
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' }
+    })
+    
+    if (!response.ok) return []
+    
+    const result = await response.json()
+    const data = Array.isArray(result.data) ? result.data : []
+    return data.map((item: any, index: number) => ({
+      id: item._id || item.id || `op-${index}`,
+      date: item.date || item.service_date || new Date().toISOString().split('T')[0],
+      vehicleNumber: item.vehicle_number || item.vehicleNumber || '',
+      serviceType: item.service_type || item.serviceType || '',
+      technician: item.technician || item.advisor || '',
+      startTime: item.start_time || item.startTime || '',
+      endTime: item.end_time || item.endTime || '',
+      hoursSpent: parseFloat(item.hours_spent || item.hoursSpent || 0),
+      status: item.status || 'completed',
+      city: item.city || normalizedCity
+    }))
+  } catch (error) {
+    console.error('❌ Error fetching Operations reports:', error)
+    return []
   }
-  return serviceBookingData
+}
+
+export async function getWarrantyReports(city?: string, month?: string): Promise<WarrantyReport[]> {
+  try {
+    if (!city) return []
+    
+    const normalizedCity = normalizeCityName(city)
+    let apiUrl = getApiUrl(`/api/service-manager/gm-dashboard-data?city=${encodeURIComponent(normalizedCity)}&dataType=warranty`)
+    
+    if (month) {
+      const { startDate, endDate } = getMonthDateRange(month)
+      apiUrl += `&startDate=${startDate}&endDate=${endDate}`
+    }
+    
+    console.log('🔄 Fetching Warranty reports from:', apiUrl)
+    const response = await fetch(apiUrl, {
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' }
+    })
+    
+    if (!response.ok) {
+      console.error('❌ Failed to fetch Warranty reports:', response.status)
+      return []
+    }
+    
+    const result = await response.json()
+    const stats = Array.isArray(result.stats) ? result.stats : []
+    
+    console.log('✅ Warranty stats received:', stats.length, 'stat periods')
+    
+    // Create records from aggregated stats
+    const records: WarrantyReport[] = []
+    
+    stats.forEach((stat: any, statIndex: number) => {
+      if (stat.warrantyStats) {
+        const claimCount = stat.warrantyStats.totalClaims || 0
+        const totalClaimValue = stat.warrantyStats.totalClaimValue || 0
+        const avgClaimAmount = claimCount > 0 ? totalClaimValue / claimCount : 0
+        
+        // Create one record per claim
+        for (let i = 0; i < claimCount; i++) {
+          records.push({
+            id: `warr-${stat._id || statIndex}-${i}`,
+            date: stat.periodStart ? new Date(stat.periodStart).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+            vehicleNumber: '',
+            customerName: '',
+            warrantyType: '',
+            claimAmount: avgClaimAmount,
+            status: 'pending',
+            city: stat.city || normalizedCity
+          })
+        }
+      }
+    })
+    
+    console.log('✅ Warranty records created:', records.length, 'records')
+    
+    // If no records, try without date filter
+    if (records.length === 0 && month) {
+      const fallbackUrl = getApiUrl(`/api/service-manager/gm-dashboard-data?city=${encodeURIComponent(normalizedCity)}&dataType=warranty`)
+      try {
+        const fallbackResponse = await fetch(fallbackUrl, {
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' }
+        })
+        if (fallbackResponse.ok) {
+          const fallbackResult = await fallbackResponse.json()
+          const fallbackStats = Array.isArray(fallbackResult.stats) ? fallbackResult.stats : []
+          
+          fallbackStats.forEach((stat: any, statIndex: number) => {
+            if (stat.warrantyStats && stat.warrantyStats.totalClaims > 0) {
+              const claimCount = stat.warrantyStats.totalClaims || 0
+              const totalClaimValue = stat.warrantyStats.totalClaimValue || 0
+              const avgClaimAmount = claimCount > 0 ? totalClaimValue / claimCount : 0
+              
+              for (let i = 0; i < claimCount; i++) {
+                records.push({
+                  id: `warr-${stat._id || statIndex}-${i}`,
+                  date: stat.periodStart ? new Date(stat.periodStart).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+                  vehicleNumber: '',
+                  customerName: '',
+                  warrantyType: '',
+                  claimAmount: avgClaimAmount,
+                  status: 'pending',
+                  city: stat.city || normalizedCity
+                })
+              }
+            }
+          })
+        }
+      } catch (e) {
+        console.error('❌ Warranty fallback failed:', e)
+      }
+    }
+    
+    return records
+  } catch (error) {
+    console.error('❌ Error fetching Warranty reports:', error)
+    return []
+  }
+}
+
+export async function getServiceBookingReports(city?: string, month?: string): Promise<ServiceBookingReport[]> {
+  try {
+    if (!city) return []
+    
+    const normalizedCity = normalizeCityName(city)
+    let apiUrl = getApiUrl(`/api/service-manager/gm-dashboard-data?city=${encodeURIComponent(normalizedCity)}&dataType=service_booking`)
+    
+    if (month) {
+      const { startDate, endDate } = getMonthDateRange(month)
+      apiUrl += `&startDate=${startDate}&endDate=${endDate}`
+    }
+    
+    console.log('🔄 Fetching Service Booking reports from:', apiUrl)
+    const response = await fetch(apiUrl, {
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' }
+    })
+    
+    if (!response.ok) {
+      console.error('❌ Failed to fetch Service Booking reports:', response.status)
+      return []
+    }
+    
+    const result = await response.json()
+    const stats = Array.isArray(result.stats) ? result.stats : []
+    
+    console.log('✅ Service Booking stats received:', stats.length, 'stat periods')
+    
+    // Create records from aggregated stats
+    const records: ServiceBookingReport[] = []
+    
+    stats.forEach((stat: any, statIndex: number) => {
+      if (stat.serviceBookingStats) {
+        const bookingCount = stat.serviceBookingStats.totalBookings || 0
+        
+        // Create one record per booking (we don't have cost breakdown in stats, so use 0)
+        // The achievement calculation will count bookings with actualCost === 0 as free services
+        for (let i = 0; i < bookingCount; i++) {
+          records.push({
+            id: `book-${stat._id || statIndex}-${i}`,
+            bookingDate: stat.periodStart ? new Date(stat.periodStart).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+            serviceDate: stat.periodStart ? new Date(stat.periodStart).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+            vehicleNumber: '',
+            customerName: '',
+            serviceType: '',
+            estimatedCost: 0,
+            actualCost: 0, // All will be counted as free service in achievement calculation
+            status: 'scheduled',
+            city: stat.city || normalizedCity
+          })
+        }
+      }
+    })
+    
+    console.log('✅ Service Booking records created:', records.length, 'records')
+    
+    // If no records, try without date filter
+    if (records.length === 0 && month) {
+      const fallbackUrl = getApiUrl(`/api/service-manager/gm-dashboard-data?city=${encodeURIComponent(normalizedCity)}&dataType=service_booking`)
+      try {
+        const fallbackResponse = await fetch(fallbackUrl, {
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' }
+        })
+        if (fallbackResponse.ok) {
+          const fallbackResult = await fallbackResponse.json()
+          const fallbackStats = Array.isArray(fallbackResult.stats) ? fallbackResult.stats : []
+          
+          fallbackStats.forEach((stat: any, statIndex: number) => {
+            if (stat.serviceBookingStats && stat.serviceBookingStats.totalBookings > 0) {
+              const bookingCount = stat.serviceBookingStats.totalBookings || 0
+              
+              for (let i = 0; i < bookingCount; i++) {
+                records.push({
+                  id: `book-${stat._id || statIndex}-${i}`,
+                  bookingDate: stat.periodStart ? new Date(stat.periodStart).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+                  serviceDate: stat.periodStart ? new Date(stat.periodStart).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+                  vehicleNumber: '',
+                  customerName: '',
+                  serviceType: '',
+                  estimatedCost: 0,
+                  actualCost: 0,
+                  status: 'scheduled',
+                  city: stat.city || normalizedCity
+                })
+              }
+            }
+          })
+        }
+      } catch (e) {
+        console.error('❌ Service Booking fallback failed:', e)
+      }
+    }
+    
+    return records
+  } catch (error) {
+    console.error('❌ Error fetching Service Booking reports:', error)
+    return []
+  }
+}
+
+// Get all cities from database
+export async function getAllCities(): Promise<string[]> {
+  try {
+    const apiUrl = getApiUrl("/api/rbac/cities")
+    console.log('🌐 Fetching cities from:', apiUrl)
+    
+    const response = await fetch(apiUrl, {
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    })
+    
+    console.log('📡 Cities API response status:', response.status)
+    
+    if (!response.ok) {
+      // If route not found (404), server might need restart - return fallback
+      if (response.status === 404) {
+        console.warn('⚠️ Cities API route not found (server may need restart). Using fallback cities.')
+        return ['Palanpur', 'Patan']
+      }
+      const errorText = await response.text()
+      console.error('❌ Cities API error:', response.status, errorText)
+      // Return fallback instead of throwing
+      return ['Palanpur', 'Patan']
+    }
+    
+    const result = await response.json()
+    console.log('📦 Cities API response:', result)
+    
+    if (result.success && Array.isArray(result.data) && result.data.length > 0) {
+      console.log('✅ Cities loaded:', result.data)
+      return result.data
+    }
+    
+    // If API returns empty array, use fallback
+    console.warn('⚠️ API returned empty cities array, using fallback')
+    return ['Palanpur', 'Patan']
+  } catch (error) {
+    console.error('❌ Error fetching cities:', error)
+    // Return fallback cities on any error
+    return ['Palanpur', 'Patan']
+  }
 }

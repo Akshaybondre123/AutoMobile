@@ -33,18 +33,23 @@ export const getUserPermissions = async (userId) => {
 
     rolePermissions.forEach((rp) => {
       const permissionKey = rp.permission_id.permission_key;
+      const metaValue = rp.meta;
+      const metaArr = metaValue ? [metaValue] : [];
       
       if (!permissionsMap.has(permissionKey)) {
         permissionsMap.set(permissionKey, {
           id: rp.permission_id._id,
           permission_key: rp.permission_id.permission_key,
           name: rp.permission_id.name,
-          meta: [rp.meta]
+          ...(metaArr.length > 0 ? { meta: metaArr } : {})
         });
       } else {
-        // If permission exists from another role, merge meta
+        // If permission exists from another role, merge meta (skip null/undefined)
         const existing = permissionsMap.get(permissionKey);
-        existing.meta.push(rp.meta);
+        if (metaValue) {
+          if (!existing.meta) existing.meta = [];
+          existing.meta.push(metaValue);
+        }
       }
     });
 
@@ -64,7 +69,26 @@ export const getUserRoles = async (userId) => {
       .populate("role_id")
       .lean();
 
-    return userRoles.map((ur) => ur.role_id);
+    const roles = userRoles.map((ur) => ur.role_id);
+    
+    // Sort roles by priority: Owner > Service_Manager > Service_Advisor
+    // This ensures the primary role returned to the frontend is the most privileged one assigned
+    const rolePriority = {
+      'owner': 0,
+      'Owner': 0,
+      'service_manager': 1,
+      'Service_Manager': 1,
+      'service_advisor': 2,
+      'Service_Advisor': 2,
+    };
+    
+    roles.sort((a, b) => {
+      const priorityA = rolePriority[a.name] ?? 999;
+      const priorityB = rolePriority[b.name] ?? 999;
+      return priorityA - priorityB;
+    });
+    
+    return roles;
   } catch (error) {
     console.error("Error fetching user roles:", error);
     throw error;
@@ -74,13 +98,19 @@ export const getUserRoles = async (userId) => {
 /**
  * Assign a role to a user
  */
-export const assignRoleToUser = async (userId, roleId, assignedBy) => {
+export const assignRoleToUser = async (userId, roleId, assignedBy, showroomId) => {
   try {
-    // Check if mapping already exists
-    const existing = await UserRoleMapping.findOne({
-      user_id: userId,
-      role_id: roleId
-    });
+    // Determine showroom context: explicit param > role.showroom_id > env default
+    let showroomForMapping = showroomId;
+    if (!showroomForMapping) {
+      const role = await Role.findById(roleId).lean();
+      showroomForMapping = (role && role.showroom_id) || process.env.DEFAULT_SHOWROOM_ID || undefined;
+    }
+
+    // Check if mapping already exists (within same showroom)
+    const existingQuery = { user_id: userId, role_id: roleId };
+    if (showroomForMapping) existingQuery.showroom_id = showroomForMapping;
+    const existing = await UserRoleMapping.findOne(existingQuery);
 
     if (existing) {
       throw new Error("Role already assigned to user");
@@ -89,6 +119,7 @@ export const assignRoleToUser = async (userId, roleId, assignedBy) => {
     const mapping = new UserRoleMapping({
       user_id: userId,
       role_id: roleId,
+      showroom_id: showroomForMapping,
       created_by: assignedBy,
       updated_by: assignedBy
     });
@@ -127,23 +158,30 @@ export const removeRoleFromUser = async (userId, roleId) => {
  */
 export const assignPermissionToRole = async (roleId, permissionId, meta = {}, assignedBy) => {
   try {
-    // Check if mapping already exists
-    const existing = await RolePermissionMapping.findOne({
-      role_id: roleId,
-      permission_id: permissionId
-    });
+    // Determine showroom context from the role (preferred) or fallback to default env
+    const role = await Role.findById(roleId).lean();
+    const showroomIdForMapping = (role && role.showroom_id) || process.env.DEFAULT_SHOWROOM_ID || undefined;
+
+    // Check if mapping already exists (within the same showroom)
+    const existingQuery = { role_id: roleId, permission_id: permissionId };
+    if (showroomIdForMapping) existingQuery.showroom_id = showroomIdForMapping;
+    const existing = await RolePermissionMapping.findOne(existingQuery);
 
     if (existing) {
       // Update meta if exists
       existing.meta = meta;
       existing.updated_by = assignedBy;
+      // ensure showroom_id is present on existing mapping
+      if (!existing.showroom_id && showroomIdForMapping) existing.showroom_id = showroomIdForMapping;
       await existing.save();
       return existing;
     }
 
+    // Create new mapping with showroom context
     const mapping = new RolePermissionMapping({
       role_id: roleId,
       permission_id: permissionId,
+      showroom_id: showroomIdForMapping,
       meta: meta,
       created_by: assignedBy,
       updated_by: assignedBy

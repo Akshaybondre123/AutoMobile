@@ -3,6 +3,7 @@ import AdvisorOperations from "../models/AdvisorOperations.js";
 import AdvisorPerformanceSummary from "../models/AdvisorPerformanceSummary.js";
 import ExcelUploadService from "../services/excelUploadService.js";
 import UploadedFileMetaDetails from "../models/UploadedFileMetaDetails.js";
+import { getDefaultOrgId, getDefaultShowroomId } from '../config/defaults.js'
 
 // Helper function to update advisor performance summary
 const updateAdvisorPerformanceSummary = async (advisorName, city, uploadedBy, dataDate, totalMatchedAmount, matchedOperations) => {
@@ -169,8 +170,8 @@ export const uploadAdvisorOperationsWithCases = async (req, res) => {
       uploaded_file_name: req.file.originalname,
       rows_count: processedRows.length,
       uploaded_by: uploadedBy,
-      org_id: req.body.org_id || "674c5b3b8f8a5c2d4e6f7890", // Default org_id
-      showroom_id: req.body.showroom_id || "674c5b3b8f8a5c2d4e6f7891", // Default showroom_id
+      org_id: req.body.org_id || getDefaultOrgId() || process.env.ORG_ID,
+      showroom_id: req.body.showroom_id || getDefaultShowroomId() || process.env.SHOWROOM_ID,
       file_type: "operations_part",
       file_size: req.file.size
     };
@@ -204,6 +205,56 @@ export const uploadAdvisorOperationsWithCases = async (req, res) => {
       message: "Error processing Excel file", 
       error: error.message 
     });
+  }
+};
+
+// Lightweight advisor operations summary
+// Returns per-advisor aggregates without row-level data
+export const getAdvisorOperationsSummary = async (req, res) => {
+  try {
+    const { uploadedBy, city, viewMode = "cumulative" } = req.query;
+
+    if (!uploadedBy) {
+      return res.status(400).json({ message: "Missing required parameter: uploadedBy" });
+    }
+
+    const match = { uploaded_by: uploadedBy };
+    if (city) match.city = city;
+
+    // Optional date filter for "specific" mode
+    if (viewMode === "specific" && req.query.dataDate) {
+      const dataDate = new Date(req.query.dataDate);
+      const start = new Date(dataDate);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(dataDate);
+      end.setHours(23, 59, 59, 999);
+      match.data_date = { $gte: start, $lte: end };
+    }
+
+    const summary = await AdvisorOperations.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: "$advisor_name",
+          totalAmount: { $sum: "$operation_amount" },
+          operations: { $sum: 1 },
+          lastDate: { $max: "$data_date" },
+        },
+      },
+      { $sort: { totalAmount: -1 } },
+    ]);
+
+    const result = summary.map((s) => ({
+      advisorName: s._id,
+      totalAmount: s.totalAmount || 0,
+      operations: s.operations || 0,
+      lastDate: s.lastDate,
+    }));
+
+    return res.json({ success: true, data: result, count: result.length });
+  } catch (error) {
+    console.error("Error fetching advisor operations summary:", error);
+    return res.status(500).json({ message: "Failed to fetch advisor operations summary" });
   }
 };
 

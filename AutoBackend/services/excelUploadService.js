@@ -234,8 +234,17 @@ class ExcelUploadService {
 
     console.log(`🚀 Processing ${uploadCase} for ${config.name}`);
 
-    const session = await mongoose.startSession();
-    session.startTransaction();
+    // Repair Order List and Booking List uploads can be large and sometimes hit transaction limits.
+    // To improve reliability, we avoid wrapping them in a MongoDB transaction and
+    // let individual upserts succeed independently.
+    const transactionalFileTypes = ['repair_order_list', 'booking_list'];
+    const useTransaction = !transactionalFileTypes.includes(fileMetadata.file_type);
+    let session = null;
+
+    if (useTransaction) {
+      session = await mongoose.startSession();
+      session.startTransaction();
+    }
 
     try {
       let insertedCount = 0;
@@ -245,19 +254,37 @@ class ExcelUploadService {
         case 'CASE_1_NEW_FILE':
           insertedCount = await this.handleCase1NewFile(excelRows, fileMetadata, model, session);
           break;
-          
+
         case 'CASE_2_DUPLICATE_FILE':
-          updatedCount = await this.handleCase2DuplicateFile(excelRows, fileMetadata, model, uniqueKey, analysis.existingRecords, session);
+          updatedCount = await this.handleCase2DuplicateFile(
+            excelRows,
+            fileMetadata,
+            model,
+            uniqueKey,
+            analysis.existingRecords,
+            session
+          );
           break;
-          
+
         case 'CASE_3_MIXED_FILE':
-          const result = await this.handleCase3MixedFile(excelRows, fileMetadata, model, uniqueKey, existingKeys, newKeys, analysis.existingRecords, session);
+          const result = await this.handleCase3MixedFile(
+            excelRows,
+            fileMetadata,
+            model,
+            uniqueKey,
+            existingKeys,
+            newKeys,
+            analysis.existingRecords,
+            session
+          );
           insertedCount = result.insertedCount;
           updatedCount = result.updatedCount;
           break;
       }
 
-      await session.commitTransaction();
+      if (useTransaction && session) {
+        await session.commitTransaction();
+      }
       
       console.log(`✅ Processing completed:`);
       console.log(`   Inserted: ${insertedCount} rows`);
@@ -266,11 +293,15 @@ class ExcelUploadService {
       return { insertedCount, updatedCount };
       
     } catch (error) {
-      await session.abortTransaction();
+      if (useTransaction && session) {
+        await session.abortTransaction();
+      }
       console.error(`❌ Error processing ${uploadCase}:`, error);
       throw error;
     } finally {
-      session.endSession();
+      if (session) {
+        session.endSession();
+      }
     }
   }
 
@@ -313,17 +344,17 @@ class ExcelUploadService {
       }
       
       try {
+        const updateOptions = session
+          ? { upsert: true, new: true, session }
+          : { upsert: true, new: true }
+
         const result = await model.findOneAndUpdate(
           queryCondition,
           {
             $set: documentData,
             $setOnInsert: { created_at: new Date() }
           },
-          {
-            upsert: true,
-            new: true,
-            session: session
-          }
+          updateOptions
         );
         
         // Check if it was an insert or update
@@ -399,13 +430,15 @@ class ExcelUploadService {
         delete updateData[uniqueKey];
       }
       
+      const updateOptions = session ? { session } : undefined;
+
       const result = await model.updateOne(
         {
           ...queryCondition,
           showroom_id: fileMetadata.showroom_id
         },
         { $set: updateData },
-        { session }
+        updateOptions
       );
       
       if (result.modifiedCount > 0) {
@@ -526,7 +559,8 @@ class ExcelUploadService {
         updated_at: new Date()
       }));
 
-      const result = await model.insertMany(documentsToInsert, { session });
+      const insertOptions = session ? { session } : undefined;
+      const result = await model.insertMany(documentsToInsert, insertOptions);
       insertedCount = result.length;
       console.log(`✅ Inserted ${insertedCount} new records with uploaded_file_id: ${fileMetadata._id}`);
     }

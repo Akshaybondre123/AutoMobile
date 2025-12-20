@@ -15,6 +15,7 @@ import mongoose from 'mongoose';
 export const getNewDashboardData = async (req, res) => {
   try {
     const { uploadedBy, city, dataType } = req.query;
+    const summaryOnly = req.query.summary === 'true';
 
     console.log(`🔍 Dashboard API called with params:`, req.query);
 
@@ -51,38 +52,38 @@ export const getNewDashboardData = async (req, res) => {
     
     // Try exact email match first
     const exactQuery = { ...fileQuery, uploaded_by: uploadedBy };
-    uploads = await UploadedFileMetaDetails.find(exactQuery)
-      .sort({ uploaded_at: -1 })
-      .limit(10);
-    console.log(`📊 Found ${uploads.length} uploads for exact email match`);
+    try {
+      uploads = await UploadedFileMetaDetails.find(exactQuery)
+        .sort({ uploaded_at: -1 })
+        .limit(10)
+        .lean();
+      console.log(`📊 Found ${uploads.length} uploads for exact email match`);
+    } catch (uploadQueryError) {
+      console.error("❌ Error querying uploads:", uploadQueryError);
+      return res.status(500).json({
+        success: false,
+        message: "Error fetching upload metadata",
+        error: uploadQueryError.message
+      });
+    }
 
-    // If no uploads found for exact email, try role-based matching
+    // If no uploads, return empty success to avoid downstream errors
     if (uploads.length === 0) {
-      console.log(`⚠️ No uploads found for email "${uploadedBy}", trying role-based matching...`);
-      
-      // For service managers, try to find uploads from any SM email
-      if (uploadedBy && (uploadedBy.includes('sm.') || uploadedBy.includes('service'))) {
-        const smQuery = { 
-          ...fileQuery,
-          uploaded_by: { $regex: /sm\.|service/i }
-        };
-        uploads = await UploadedFileMetaDetails.find(smQuery)
-          .sort({ uploaded_at: -1 })
-          .limit(10);
-        console.log(`📊 Found ${uploads.length} uploads for SM role-based match`);
-      }
-      
-      // If still no uploads, get all uploads for the file type
-      if (uploads.length === 0) {
-        uploads = await UploadedFileMetaDetails.find(fileQuery)
-          .sort({ uploaded_at: -1 })
-          .limit(10);
-        console.log(`📊 Using fallback query, found ${uploads.length} uploads`);
-        
-        // Debug: Show available uploaded_by values
-        const allUploads = await UploadedFileMetaDetails.find({}).select('uploaded_by file_type').limit(5);
-        console.log(`📋 Available uploaded_by values:`, allUploads.map(u => u.uploaded_by));
-      }
+      return res.json({
+        success: true,
+        dataType: dataType || 'all',
+        count: 0,
+        data: [],
+        summary: {},
+        uploads: [],
+      });
+    }
+
+    // ✅ STRICT DATA ISOLATION: Only show data uploaded by the exact user
+    // No fallback to other users' data to prevent data leakage between service managers
+    if (uploads.length === 0) {
+      console.log(`⚠️ No uploads found for email "${uploadedBy}" - maintaining strict data isolation`);
+      console.log(`🔒 Data isolation enforced: Each service manager can only see their own uploaded data`);
     }
 
     // Get data based on type
@@ -90,52 +91,72 @@ export const getNewDashboardData = async (req, res) => {
       case 'ro_billing':
         const roBillingFiles = uploads.filter(f => f.file_type === 'ro_billing');
         if (roBillingFiles.length > 0) {
-          const fileIds = roBillingFiles.map(f => f._id);
-          const rawData = await ROBillingData.find({ uploaded_file_id: { $in: fileIds } })
-            .sort({ created_at: -1 });
+          const fileIds = roBillingFiles.map(f => f._id).filter(id => mongoose.Types.ObjectId.isValid(id));
           
-          // Convert snake_case to camelCase for frontend compatibility
-          data = rawData.map(record => ({
-            ...record.toObject(),
-            // Map database fields to frontend expected fields
-            workType: record.work_type,
-            serviceAdvisor: record.service_advisor,
-            labourAmt: record.labour_amt,
-            partAmt: record.part_amt,
-            totalAmount: record.total_amount,
-            vehicleNumber: record.vehicle_number,
-            customerName: record.customer_name,
-            billDate: record.bill_date,
-            technicianName: record.technician_name,
-            discountAmount: record.discount_amount,
-            taxAmount: record.tax_amount,
-            roundOffAmount: record.round_off_amount,
-            serviceTax: record.service_tax,
-            vatAmount: record.vat_amount,
-            labourTax: record.labour_tax,
-            partTax: record.part_tax,
-            otherAmount: record.other_amount
-          }));
+          if (fileIds.length === 0) {
+            break; // Skip if no valid file IDs
+          }
+
+          try {
+            if (!summaryOnly) {
+              const rawData = await ROBillingData.find({ uploaded_file_id: { $in: fileIds } })
+                .sort({ created_at: -1 })
+                .lean();
+              
+              // Convert snake_case to camelCase for frontend compatibility
+              data = (rawData || []).map(record => ({
+                ...record,
+                // Map database fields to frontend expected fields
+                workType: record.work_type,
+                serviceAdvisor: record.service_advisor,
+                labourAmt: record.labour_amt || 0,
+                partAmt: record.part_amt || 0,
+                totalAmount: record.total_amount || 0,
+                vehicleNumber: record.vehicle_number,
+                customerName: record.customer_name,
+                billDate: record.bill_date,
+                technicianName: record.technician_name,
+                discountAmount: record.discount_amount || 0,
+                taxAmount: record.tax_amount || 0,
+                roundOffAmount: record.round_off_amount || 0,
+                serviceTax: record.service_tax || 0,
+                vatAmount: record.vat_amount || 0,
+                labourTax: record.labour_tax || 0,
+                partTax: record.part_tax || 0,
+                otherAmount: record.other_amount || 0
+              }));
+            }
+            
+            count = await ROBillingData.countDocuments({ uploaded_file_id: { $in: fileIds } }).catch(() => 0);
+            
+            // Calculate summary
+            const totalAmount = await ROBillingData.aggregate([
+              { $match: { uploaded_file_id: { $in: fileIds } } },
+              { $group: { 
+                _id: null, 
+                total: { $sum: { $ifNull: ['$total_amount', 0] } },
+                labour: { $sum: { $ifNull: ['$labour_amt', 0] } },
+                parts: { $sum: { $ifNull: ['$part_amt', 0] } }
+              }}
+            ]).catch(() => []);
           
-          count = await ROBillingData.countDocuments({ uploaded_file_id: { $in: fileIds } });
-          
-          // Calculate summary
-          const totalAmount = await ROBillingData.aggregate([
-            { $match: { uploaded_file_id: { $in: fileIds } } },
-            { $group: { 
-              _id: null, 
-              total: { $sum: '$total_amount' },
-              labour: { $sum: '$labour_amt' },
-              parts: { $sum: '$part_amt' }
-            }}
-          ]);
-          
-          summary = {
-            totalRecords: count,
-            totalAmount: totalAmount[0]?.total || 0,
-            labourAmount: totalAmount[0]?.labour || 0,
-            partsAmount: totalAmount[0]?.parts || 0
-          };
+            summary = {
+              totalRecords: count,
+              totalAmount: totalAmount[0]?.total || 0,
+              labourAmount: totalAmount[0]?.labour || 0,
+              partsAmount: totalAmount[0]?.parts || 0
+            };
+          } catch (roBillingError) {
+            console.error("❌ Error processing RO Billing data:", roBillingError);
+            count = 0;
+            data = [];
+            summary = {
+              totalRecords: 0,
+              totalAmount: 0,
+              labourAmount: 0,
+              partsAmount: 0
+            };
+          }
         }
         break;
 
@@ -143,8 +164,10 @@ export const getNewDashboardData = async (req, res) => {
         const warrantyFiles = uploads.filter(f => f.file_type === 'warranty');
         if (warrantyFiles.length > 0) {
           const fileIds = warrantyFiles.map(f => f._id);
-          data = await WarrantyData.find({ uploaded_file_id: { $in: fileIds } })
-            .sort({ created_at: -1 });
+          if (!summaryOnly) {
+            data = await WarrantyData.find({ uploaded_file_id: { $in: fileIds } })
+              .sort({ created_at: -1 });
+          }
           count = await WarrantyData.countDocuments({ uploaded_file_id: { $in: fileIds } });
           
           // Calculate warranty financial summary
@@ -238,8 +261,10 @@ export const getNewDashboardData = async (req, res) => {
         const bookingFiles = uploads.filter(f => f.file_type === 'booking_list');
         if (bookingFiles.length > 0) {
           const fileIds = bookingFiles.map(f => f._id);
-          data = await BookingListData.find({ uploaded_file_id: { $in: fileIds } })
-            .sort({ created_at: -1 });
+          if (!summaryOnly) {
+            data = await BookingListData.find({ uploaded_file_id: { $in: fileIds } })
+              .sort({ created_at: -1 });
+          }
           count = await BookingListData.countDocuments({ uploaded_file_id: { $in: fileIds } });
           
           // Get Service Advisor breakdown
@@ -310,8 +335,10 @@ export const getNewDashboardData = async (req, res) => {
         const repairOrderFiles = uploads.filter(f => f.file_type === 'repair_order_list');
         if (repairOrderFiles.length > 0) {
           const fileIds = repairOrderFiles.map(f => f._id);
-          data = await RepairOrderListData.find({ uploaded_file_id: { $in: fileIds } })
-            .sort({ created_at: -1 });
+          if (!summaryOnly) {
+            data = await RepairOrderListData.find({ uploaded_file_id: { $in: fileIds } })
+              .sort({ created_at: -1 });
+          }
           count = await RepairOrderListData.countDocuments({ uploaded_file_id: { $in: fileIds } });
           
           // Calculate summary for Repair Order List
@@ -365,54 +392,119 @@ export const getNewDashboardData = async (req, res) => {
         const allFiles = uploads;
         const fileIds = allFiles.map(f => f._id);
         
-        // Get actual data and counts with warranty calculations
-        const [roData, warrantyData, roCount, warrantyCount, bookingCount, operationsCount, warrantyTotals] = await Promise.all([
-          ROBillingData.find({ uploaded_file_id: { $in: fileIds } }).sort({ created_at: -1 }).limit(50),
-          WarrantyData.find({ uploaded_file_id: { $in: fileIds } }).sort({ created_at: -1 }).limit(50),
-          ROBillingData.countDocuments({ uploaded_file_id: { $in: fileIds } }),
-          WarrantyData.countDocuments({ uploaded_file_id: { $in: fileIds } }),
-          BookingListData.countDocuments({ uploaded_file_id: { $in: fileIds } }),
-          OperationsPartData.countDocuments({ uploaded_file_id: { $in: fileIds } }),
-          WarrantyData.aggregate([
-            { $match: { uploaded_file_id: { $in: fileIds } } },
-            { $group: { 
-              _id: null, 
-              totalClaimAmount: { $sum: '$total_claim_amount' },
-              totalLabourAmount: { $sum: '$labour_amount' },
-              totalPartAmount: { $sum: '$part_amount' },
-              totalApprovedAmount: { $sum: '$approved_amount' }
-            }}
-          ])
-        ]);
-
-        // Convert RO Billing data to camelCase for frontend
-        const convertedRoData = roData.map(record => ({
-          ...record.toObject(),
-          workType: record.work_type,
-          serviceAdvisor: record.service_advisor,
-          labourAmt: record.labour_amt,
-          partAmt: record.part_amt,
-          totalAmount: record.total_amount,
-          vehicleNumber: record.vehicle_number,
-          customerName: record.customer_name,
-          billDate: record.bill_date,
-          technicianName: record.technician_name
-        }));
-
-        // Combine data for average view
-        data = [...convertedRoData, ...warrantyData];
-        count = roCount + warrantyCount + bookingCount + operationsCount;
+        // Validate fileIds - ensure they're valid ObjectIds
+        const validFileIds = fileIds.filter(id => {
+          try {
+            return mongoose.Types.ObjectId.isValid(id);
+          } catch (e) {
+            return false;
+          }
+        });
         
-        // Calculate financial summary from RO Billing data
-        const totalAmount = await ROBillingData.aggregate([
-          { $match: { uploaded_file_id: { $in: fileIds } } },
-          { $group: { 
-            _id: null, 
-            total: { $sum: '$total_amount' },
-            labour: { $sum: '$labour_amt' },
-            parts: { $sum: '$part_amt' }
-          }}
-        ]);
+        // If no valid file IDs, return empty response
+        if (validFileIds.length === 0) {
+          return res.json({
+            success: true,
+            dataType: dataType || 'all',
+            count: 0,
+            data: [],
+            summary: {
+              totalRecords: 0,
+              roBilling: 0,
+              warranty: 0,
+              bookings: 0,
+              operations: 0,
+              totalAmount: 0,
+              labourAmount: 0,
+              partsAmount: 0
+            },
+            uploads: uploads.map(upload => ({
+              _id: upload._id,
+              fileName: upload.uploaded_file_name,
+              uploadDate: upload.uploaded_at,
+              fileType: upload.file_type,
+              rowsCount: upload.rows_count,
+              processingStatus: upload.processing_status
+            }))
+          });
+        }
+        
+        // Get counts and aggregates; only fetch sample data when not summary
+        let roCount = 0, warrantyCount = 0, bookingCount = 0, operationsCount = 0;
+        let warrantyTotals = [], totalAmountAgg = [];
+        
+        try {
+          [
+            roCount,
+            warrantyCount,
+            bookingCount,
+            operationsCount,
+            warrantyTotals,
+            totalAmountAgg
+          ] = await Promise.all([
+            ROBillingData.countDocuments({ uploaded_file_id: { $in: validFileIds } }).catch(() => 0),
+            WarrantyData.countDocuments({ uploaded_file_id: { $in: validFileIds } }).catch(() => 0),
+            BookingListData.countDocuments({ uploaded_file_id: { $in: validFileIds } }).catch(() => 0),
+            OperationsPartData.countDocuments({ uploaded_file_id: { $in: validFileIds } }).catch(() => 0),
+            WarrantyData.aggregate([
+              { $match: { uploaded_file_id: { $in: validFileIds } } },
+              { $group: { 
+                _id: null, 
+                totalClaimAmount: { $sum: { $ifNull: ['$total_claim_amount', 0] } },
+                totalLabourAmount: { $sum: { $ifNull: ['$labour_amount', 0] } },
+                totalPartAmount: { $sum: { $ifNull: ['$part_amount', 0] } },
+                totalApprovedAmount: { $sum: { $ifNull: ['$approved_amount', 0] } }
+              }}
+            ]).catch(() => []),
+            ROBillingData.aggregate([
+              { $match: { uploaded_file_id: { $in: validFileIds } } },
+              { $group: { 
+                _id: null, 
+                total: { $sum: { $ifNull: ['$total_amount', 0] } },
+                labour: { $sum: { $ifNull: ['$labour_amt', 0] } },
+                parts: { $sum: { $ifNull: ['$part_amt', 0] } }
+              }}
+            ]).catch(() => [])
+          ]);
+        } catch (queryError) {
+          console.error("❌ Error in Promise.all queries:", queryError);
+          // Continue with default values (all zeros/empty arrays)
+        }
+
+        if (!summaryOnly) {
+          try {
+            const [roData, warrantyData] = await Promise.all([
+              ROBillingData.find({ uploaded_file_id: { $in: validFileIds } }).sort({ created_at: -1 }).limit(50).catch(() => []),
+              WarrantyData.find({ uploaded_file_id: { $in: validFileIds } }).sort({ created_at: -1 }).limit(50).catch(() => [])
+            ]);
+
+            // Convert RO Billing data to camelCase for frontend
+            const convertedRoData = (roData || []).map(record => {
+              const recordObj = record && typeof record.toObject === 'function' ? record.toObject() : record;
+              return {
+                ...recordObj,
+                workType: recordObj.work_type,
+                serviceAdvisor: recordObj.service_advisor,
+                labourAmt: recordObj.labour_amt || 0,
+                partAmt: recordObj.part_amt || 0,
+                totalAmount: recordObj.total_amount || 0,
+                vehicleNumber: recordObj.vehicle_number,
+                customerName: recordObj.customer_name,
+                billDate: recordObj.bill_date,
+                technicianName: recordObj.technician_name
+              };
+            });
+
+            // Combine data for average view (limited sample)
+            data = [...convertedRoData, ...(warrantyData || [])];
+          } catch (dataFetchError) {
+            console.error("❌ Error fetching data for average dashboard:", dataFetchError);
+            data = []; // Set empty data array on error
+          }
+        }
+
+        const totalAmount = totalAmountAgg || [];
+        count = roCount + warrantyCount + bookingCount + operationsCount;
 
         summary = {
           totalRecords: count,
