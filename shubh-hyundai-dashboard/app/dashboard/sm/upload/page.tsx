@@ -287,26 +287,26 @@ export default function ServiceManagerUploadPage() {
   }
 
   return (
-    <div className="space-y-8 pb-8">
+    <div className="space-y-6 md:space-y-8 pb-8">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="space-y-2">
-          <h1 className="text-4xl font-bold text-gray-900">Upload Data</h1>
-          <p className="text-gray-500">
+          <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900">Upload Data</h1>
+          <p className="text-sm sm:text-base text-gray-500">
             Upload Excel files for {userCity} Service Center • Only you can view your uploaded data
           </p>
         </div>
         <Button
           onClick={() => router.push("/dashboard/sm")}
           variant="outline"
-          className="border-gray-300"
+          className="border-gray-300 w-full sm:w-auto"
         >
           View Dashboard
         </Button>
       </div>
 
       {/* Upload Cards Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
         {uploadSections.map((section) => {
           const colors = getColorClasses(section.color)
           const message = messages[section.type]

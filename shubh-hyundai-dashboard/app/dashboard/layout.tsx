@@ -107,10 +107,10 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex">
+    <div className="flex min-h-screen">
       <Sidebar />
-      <main className="flex-1 md:ml-64 min-h-screen bg-background">
-        <div className="p-4 md:p-8">{children}</div>
+      <main className="flex-1 md:ml-64 min-h-screen bg-background w-full overflow-x-hidden">
+        <div className="p-3 sm:p-4 md:p-6 lg:p-8">{children}</div>
       </main>
     </div>
   )

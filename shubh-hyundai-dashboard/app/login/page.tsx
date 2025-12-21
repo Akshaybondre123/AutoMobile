@@ -62,8 +62,8 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         <Card>
           <CardHeader className="text-center">
-            <CardTitle className="text-3xl font-semibold">Shubh Hyundai</CardTitle>
-            <CardDescription>Service Management Dashboard</CardDescription>
+            <CardTitle className="text-2xl sm:text-3xl font-semibold">Shubh Hyundai</CardTitle>
+            <CardDescription className="text-sm sm:text-base">Service Management Dashboard</CardDescription>
           </CardHeader>
 
           <CardContent className="space-y-6">

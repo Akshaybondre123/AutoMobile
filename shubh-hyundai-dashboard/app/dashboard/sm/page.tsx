@@ -3578,51 +3578,55 @@ export default function SMDashboard() {
       <div className="container mx-auto space-y-6 pb-8">
         {/* Compact Professional Header */}
         <Card className="border-2 border-blue-200 bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-700 shadow-xl overflow-hidden">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="rounded-xl bg-white/20 p-3 backdrop-blur-sm">
-                  <Car className="h-7 w-7 text-white" />
+          <CardContent className="p-4 md:p-6">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div className="flex items-center gap-3 md:gap-4">
+                <div className="rounded-xl bg-white/20 p-2 md:p-3 backdrop-blur-sm flex-shrink-0">
+                  <Car className="h-5 w-5 md:h-7 md:w-7 text-white" />
                 </div>
-                <div>
-                  <h1 className="text-2xl font-bold text-white drop-shadow-lg">
+                <div className="min-w-0 flex-1">
+                  <h1 className="text-xl md:text-2xl font-bold text-white drop-shadow-lg">
                     SM Dashboard
                   </h1>
-                  <p className="text-blue-100 text-sm flex items-center gap-2 mt-0.5">
-                    <Gauge className="h-3.5 w-3.5" /> 
-                    {user?.showroom_city} • {user?.name} 
+                  <p className="text-blue-100 text-xs md:text-sm flex flex-wrap items-center gap-2 mt-0.5">
+                    <Gauge className="h-3 w-3 md:h-3.5 md:w-3.5 flex-shrink-0" /> 
+                    <span className="truncate">{user?.showroom_city} • {user?.name}</span>
                     {isLoading && hasData && (
-                      <span className="ml-2 flex items-center gap-1 text-xs bg-white/20 px-2 py-1 rounded-full">
+                      <span className="flex items-center gap-1 text-xs bg-white/20 px-2 py-1 rounded-full flex-shrink-0">
                         <Loader2 className="h-3 w-3 animate-spin" />
-                        Updating
+                        <span className="hidden sm:inline">Updating</span>
                       </span>
                     )}
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
-                <div className="hidden md:flex items-center gap-2 text-blue-100 text-sm bg-white/10 px-4 py-2 rounded-lg backdrop-blur-sm">
-                  <Calendar className="h-4 w-4" />
-                  {new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 md:gap-3">
+                <div className="flex items-center justify-center sm:justify-start gap-2 text-blue-100 text-xs md:text-sm bg-white/10 px-3 md:px-4 py-2 rounded-lg backdrop-blur-sm">
+                  <Calendar className="h-3.5 w-3.5 md:h-4 md:w-4" />
+                  <span className="whitespace-nowrap">{new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</span>
                 </div>
-                <Button
-                  onClick={() => {
-                    console.log('🔄 Manual refresh triggered - using global state')
-                    refreshData()
-                  }}
-                  variant="outline"
-                  className="bg-white/10 text-white border-white/30 hover:bg-white/20 shadow-lg hover:shadow-xl transition-all h-10 px-4"
-                >
-                  <Activity className="mr-2 h-4 w-4" />
-                  Refresh
-                </Button>
-                <Button
-                  onClick={() => router.push("/dashboard/sm/upload")}
-                  className="bg-white text-blue-700 hover:bg-blue-50 shadow-lg hover:shadow-xl transition-all h-10 px-5"
-                >
-                  <Upload className="mr-2 h-4 w-4" />
-                  Upload Data
-                </Button>
+                <div className="flex gap-2 md:gap-3">
+                  <Button
+                    onClick={() => {
+                      console.log('🔄 Manual refresh triggered - using global state')
+                      refreshData()
+                    }}
+                    variant="outline"
+                    className="bg-white/10 text-white border-white/30 hover:bg-white/20 shadow-lg hover:shadow-xl transition-all h-9 md:h-10 px-3 md:px-4 flex-1 sm:flex-initial"
+                  >
+                    <Activity className="mr-1.5 md:mr-2 h-3.5 w-3.5 md:h-4 md:w-4" />
+                    <span className="hidden sm:inline">Refresh</span>
+                    <span className="sm:hidden">↻</span>
+                  </Button>
+                  <Button
+                    onClick={() => router.push("/dashboard/sm/upload")}
+                    className="bg-white text-blue-700 hover:bg-blue-50 shadow-lg hover:shadow-xl transition-all h-9 md:h-10 px-3 md:px-5 flex-1 sm:flex-initial"
+                  >
+                    <Upload className="mr-1.5 md:mr-2 h-3.5 w-3.5 md:h-4 md:w-4" />
+                    <span className="hidden sm:inline">Upload Data</span>
+                    <span className="sm:hidden">Upload</span>
+                  </Button>
+                </div>
               </div>
             </div>
             

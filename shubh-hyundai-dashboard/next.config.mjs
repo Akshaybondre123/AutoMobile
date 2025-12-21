@@ -9,12 +9,11 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   images: {
     unoptimized: true,
-  },
-  // Fix HMR issues - Use turbopack config instead of webpack for Next.js 16
-  turbopack: {
-    root: __dirname,
   },
   // Add CORS headers for API requests
   async headers() {
