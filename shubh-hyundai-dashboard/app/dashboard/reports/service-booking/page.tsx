@@ -24,7 +24,23 @@ export default function ServiceBookingPage() {
 
   useEffect(() => {
     const dataArray = Array.isArray(dashboardData?.data) ? dashboardData.data : []
-    setData(dataArray)
+    // Map backend field names (snake_case) to frontend field names (camelCase)
+    const mappedData = dataArray.map((record: any) => ({
+      serviceAdvisor: record.service_advisor || record.serviceAdvisor || '',
+      btDateTime: record.bt_date_time || record.btDateTime || record.bt_date || '',
+      workType: record.work_type || record.workType || '',
+      status: record.booking_status || record.status || record.bt_status || '',
+      // Include other fields if needed
+      bookingNumber: record.booking_number || record.bookingNumber || '',
+      customerName: record.customer_name || record.customerName || '',
+      vehicleNumber: record.Reg_No || record.vehicleNumber || record.reg_no || '',
+      vinNumber: record.vin_number || record.vinNumber || '',
+      appointmentDate: record.appointment_date || record.appointmentDate || '',
+      appointmentTime: record.appointment_time || record.appointmentTime || '',
+      // Keep original record for debugging
+      _original: record
+    }))
+    setData(mappedData)
   }, [dashboardData])
   
   // Check permission first
@@ -46,27 +62,42 @@ export default function ServiceBookingPage() {
 
   // Status mapping: Close = Completed, In Progress = Pending
   const completed = data.filter((row) => {
-    const status = row.status?.toLowerCase()
+    const status = (row.status || row._original?.booking_status || '').toLowerCase()
     return status === "completed" || status === "close" || status === "closed"
   }).length
   
   const pending = data.filter((row) => {
-    const status = row.status?.toLowerCase()
-    return status === "pending" || status === "in progress"
+    const status = (row.status || row._original?.booking_status || '').toLowerCase()
+    return status === "pending" || status === "in progress" || status === "inprogress"
   }).length
   
-  const open = data.filter((row) => row.status?.toLowerCase() === "open").length
+  const open = data.filter((row) => {
+    const status = (row.status || row._original?.booking_status || '').toLowerCase()
+    return status === "open"
+  }).length
+  
   const cancelled = data.filter((row) => {
-    const status = row.status?.toLowerCase()
+    const status = (row.status || row._original?.booking_status || '').toLowerCase()
     return status === "cancel" || status === "cancelled" || status === "canceled"
   }).length
   
   const completionRate = data.length ? Math.round((completed / data.length) * 100) : 0
 
   // Work Type counts
-  const paidService = data.filter((row) => row.workType?.toLowerCase().includes("paid")).length
-  const freeService = data.filter((row) => row.workType?.toLowerCase().includes("free")).length
-  const runningRepair = data.filter((row) => row.workType?.toLowerCase().includes("running")).length
+  const paidService = data.filter((row) => {
+    const workType = (row.workType || row._original?.work_type || '').toLowerCase()
+    return workType.includes("paid")
+  }).length
+  
+  const freeService = data.filter((row) => {
+    const workType = (row.workType || row._original?.work_type || '').toLowerCase()
+    return workType.includes("free")
+  }).length
+  
+  const runningRepair = data.filter((row) => {
+    const workType = (row.workType || row._original?.work_type || '').toLowerCase()
+    return workType.includes("running")
+  }).length
 
   return (
     <div className="space-y-6">
@@ -117,30 +148,38 @@ export default function ServiceBookingPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.map((record, idx) => (
-                    <tr key={idx} className="border-b hover:bg-muted/50">
-                      <td className="py-3 px-4">{record.serviceAdvisor}</td>
-                      <td className="py-3 px-4">{record.btDateTime}</td>
-                      <td className="py-3 px-4">{record.workType}</td>
-                      <td className="text-center py-3 px-4">
-                        <span
-                          className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            record.status?.toLowerCase() === "close" || record.status?.toLowerCase() === "closed" || record.status?.toLowerCase() === "completed"
-                              ? "bg-green-100 text-green-800"
-                              : record.status?.toLowerCase() === "cancel" || record.status?.toLowerCase() === "cancelled" || record.status?.toLowerCase() === "canceled"
-                                ? "bg-red-100 text-red-800"
-                                : record.status?.toLowerCase() === "in progress" || record.status?.toLowerCase() === "pending"
-                                  ? "bg-orange-100 text-orange-800"
-                                  : record.status?.toLowerCase() === "open"
-                                    ? "bg-blue-100 text-blue-800"
-                                    : "bg-gray-100 text-gray-800"
-                          }`}
-                        >
-                          {record.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
+                  {data.map((record, idx) => {
+                    const serviceAdvisor = record.serviceAdvisor || record._original?.service_advisor || 'N/A'
+                    const btDateTime = record.btDateTime || record._original?.bt_date_time || 'N/A'
+                    const workType = record.workType || record._original?.work_type || 'N/A'
+                    const status = record.status || record._original?.booking_status || record._original?.status || 'Pending'
+                    const statusLower = status.toLowerCase()
+                    
+                    return (
+                      <tr key={idx} className="border-b hover:bg-muted/50">
+                        <td className="py-3 px-4 text-sm">{serviceAdvisor}</td>
+                        <td className="py-3 px-4 text-sm">{btDateTime}</td>
+                        <td className="py-3 px-4 text-sm">{workType}</td>
+                        <td className="text-center py-3 px-4">
+                          <span
+                            className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              statusLower === "close" || statusLower === "closed" || statusLower === "completed"
+                                ? "bg-green-100 text-green-800"
+                                : statusLower === "cancel" || statusLower === "cancelled" || statusLower === "canceled"
+                                  ? "bg-red-100 text-red-800"
+                                  : statusLower === "in progress" || statusLower === "inprogress" || statusLower === "pending"
+                                    ? "bg-orange-100 text-orange-800"
+                                    : statusLower === "open"
+                                      ? "bg-blue-100 text-blue-800"
+                                      : "bg-gray-100 text-gray-800"
+                            }`}
+                          >
+                            {status}
+                          </span>
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

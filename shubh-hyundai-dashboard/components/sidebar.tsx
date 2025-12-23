@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation"
 import { useAuth } from "@/lib/auth-context"
 import { usePermissions } from "@/hooks/usePermissions"
 import { Button } from "@/components/ui/button"
-import { BarChart3, Upload, Target, LogOut, Menu, X, Settings, LayoutDashboard, Wrench, PlusSquare } from "lucide-react"
+import { BarChart3, Upload, Target, LogOut, Menu, X, Settings, LayoutDashboard, Wrench, PlusSquare, FileText, Shield } from "lucide-react"
 import { useState } from "react"
 
 export function Sidebar() {
@@ -56,29 +56,17 @@ export function Sidebar() {
     dashboardHref = "/dashboard/bdm"
   }
 
-  const navItems = [
-    // Main Dashboards - Route based on permissions (owner is only fixed role)
+  // Group navigation items by category for better organization
+  const dashboardItems = [
     {
       label: "Dashboard",
       href: dashboardHref,
       icon: BarChart3,
-      show: true, // Everyone can see their respective dashboard
+      show: true,
     },
-    // Service Advisor specific tools
-    {
-      label: "Services Dashboard",
-      href: "/dashboard/sa/services",
-      icon: Wrench,
-      show: isSA,
-    },
-    {
-      label: "Create Service",
-      href: "/dashboard/sa/create-service",
-      icon: PlusSquare,
-      show: isSA,
-    },
-    
-    // GM Module Pages - GM sees all, others need permission
+  ]
+
+  const managementItems = [
     {
       label: "Overview",
       href: "/dashboard/gm/overview",
@@ -95,19 +83,35 @@ export function Sidebar() {
       label: "User Access",
       href: "/dashboard/gm/user-access",
       icon: Settings,
-      // Owners should always see User Access (or anyone with manage_users permission)
       show: isGM || hasPermission("manage_users"),
     },
-    
-    // Upload - Single permission for all uploads (anyone with upload permission, not GM)
+  ]
+
+  const serviceItems = [
+    {
+      label: "Services Dashboard",
+      href: "/dashboard/sa/services",
+      icon: Wrench,
+      show: isSA,
+    },
+    {
+      label: "Create Service",
+      href: "/dashboard/sa/create-service",
+      icon: PlusSquare,
+      show: isSA,
+    },
+  ]
+
+  const uploadItems = [
     {
       label: "Upload",
       href: "/dashboard/sm/upload",
       icon: Upload,
       show: !isGM && hasPermission("upload"),
     },
-    
-    // Reports - Show only for SM/SA, not GM (GM has overview in their dashboard)
+  ]
+
+  const reportItems = [
     {
       label: "Target Report",
       href: "/dashboard/reports/targets",
@@ -117,13 +121,13 @@ export function Sidebar() {
     {
       label: "RO Billing Report",
       href: "/dashboard/reports/ro-billing",
-      icon: BarChart3,
+      icon: FileText,
       show: !isGM && hasPermission("ro_billing_report"),
     },
     {
       label: "Warranty Report",
       href: "/dashboard/reports/warranty",
-      icon: BarChart3,
+      icon: Shield,
       show: !isGM && hasPermission("warranty_report"),
     },
     {
@@ -135,12 +139,56 @@ export function Sidebar() {
     {
       label: "Service Booking Report",
       href: "/dashboard/reports/service-booking",
-      icon: BarChart3,
+      icon: FileText,
       show: !isGM && hasPermission("service_booking_report"),
+    },
+    {
+      label: "Repair Order List Report",
+      href: "/dashboard/reports/repair-order-list",
+      icon: FileText,
+      show: !isGM && hasPermission("repair_order_list_report"),
     },
   ]
 
-  const visibleItems = navItems.filter((item) => item.show)
+  // Helper function to render grouped nav items
+  const renderNavGroup = (items: typeof dashboardItems, groupLabel?: string) => {
+    const visibleItems = items.filter((item) => item.show)
+    if (visibleItems.length === 0) return null
+
+    return (
+      <div className="space-y-1">
+        {groupLabel && (
+          <div className="px-4 py-2 mt-4 first:mt-0">
+            <p className="text-xs font-semibold text-sidebar-foreground/50 uppercase tracking-wider">
+              {groupLabel}
+            </p>
+          </div>
+        )}
+        {visibleItems.map((item) => {
+          const Icon = item.icon
+          const isActive = pathname === item.href || pathname?.startsWith(item.href + '/')
+          return (
+            <Link key={item.href} href={item.href}>
+              <button
+                onClick={() => setIsOpen(false)}
+                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 group ${
+                  isActive 
+                    ? "bg-primary text-primary-foreground shadow-sm" 
+                    : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                }`}
+              >
+                <Icon 
+                  size={20} 
+                  className={`transition-transform duration-200 ${isActive ? 'scale-105' : 'group-hover:scale-105'}`}
+                />
+                <span className="flex-1 text-left font-medium">{item.label}</span>
+              </button>
+            </Link>
+          )
+        })}
+      </div>
+    )
+  }
 
   return (
     <>
@@ -154,48 +202,58 @@ export function Sidebar() {
 
       {/* Sidebar */}
       <aside
-        className={`fixed left-0 top-0 h-screen w-64 bg-sidebar text-sidebar-foreground border-r border-sidebar-border transition-transform duration-300 z-40 ${
+        className={`fixed left-0 top-0 h-screen w-64 bg-sidebar text-sidebar-foreground border-r border-sidebar-border transition-transform duration-300 z-40 flex flex-col ${
           isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         }`}
       >
-        {/* Simplified header styling with neutral colors */}
-        <div className="p-6 border-b border-sidebar-border">
-          <h1 className="text-2xl font-bold text-sidebar-foreground">Shubh Hyundai</h1>
-          <p className="text-sm text-sidebar-foreground/60 mt-1">Service Dashboard</p>
+        {/* Header */}
+        <div className="p-6 border-b border-sidebar-border flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+              <BarChart3 className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-sidebar-foreground">Shubh Hyundai</h1>
+              <p className="text-xs text-sidebar-foreground/60 mt-0.5">Service Dashboard</p>
+            </div>
+          </div>
         </div>
 
-        <nav className="p-4 space-y-2">
-          {visibleItems.map((item) => {
-            const Icon = item.icon
-            const isActive = pathname === item.href
-            return (
-              <Link key={item.href} href={item.href}>
-                <button
-                  onClick={() => setIsOpen(false)}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                    isActive ? "bg-primary text-primary-foreground" : "text-sidebar-foreground hover:bg-sidebar-accent"
-                  }`}
-                >
-                  <Icon size={20} />
-                  <span>{item.label}</span>
-                </button>
-              </Link>
-            )
-          })}
+        {/* Navigation with Scroll */}
+        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
+          {renderNavGroup(dashboardItems)}
+          {renderNavGroup(managementItems, "Management")}
+          {renderNavGroup(serviceItems, "Services")}
+          {renderNavGroup(uploadItems, "Data")}
+          {renderNavGroup(reportItems, "Reports")}
         </nav>
 
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-sidebar-border">
-          <Button
-            onClick={() => {
-              logout()
-              setIsOpen(false)
-            }}
-            variant="outline"
-            className="w-full justify-start gap-2"
-          >
-            <LogOut size={18} />
-            Logout
-          </Button>
+        {/* User Info & Logout */}
+        <div className="border-t border-sidebar-border bg-sidebar/50 backdrop-blur-sm flex-shrink-0">
+          <div className="p-4">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                <span className="text-primary font-semibold text-sm">
+                  {user?.name?.charAt(0)?.toUpperCase() || user?.email?.charAt(0)?.toUpperCase() || 'U'}
+                </span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-sidebar-foreground truncate">{user?.name || 'User'}</p>
+                <p className="text-xs text-sidebar-foreground/60 truncate">{user?.email || ''}</p>
+              </div>
+            </div>
+            <Button
+              onClick={() => {
+                logout()
+                setIsOpen(false)
+              }}
+              variant="outline"
+              className="w-full justify-start gap-2 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30"
+            >
+              <LogOut size={18} />
+              Logout
+            </Button>
+          </div>
         </div>
       </aside>
 

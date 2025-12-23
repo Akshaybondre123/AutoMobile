@@ -710,7 +710,7 @@ const GMDashboard = () => {
                   onMouseEnter={handleMouseEnter}
                   onMouseLeave={handleMouseLeave}
                 >
-                  <div className={`${showroom.color} p-6 text-white relative min-h-[380px] cursor-pointer`}>
+                  <div className={`${showroom.color} p-4 sm:p-6 text-white relative min-h-[300px] sm:min-h-[380px] cursor-pointer`}>
                     {/* Background Pattern */}
                     <div className="absolute inset-0 opacity-10">
                       <div className="absolute top-0 right-0 w-32 h-32 bg-white rounded-full -mr-16 -mt-16"></div>
@@ -721,58 +721,58 @@ const GMDashboard = () => {
                       className="relative z-10 h-full"
                       onClick={() => handleCardClick(showroom.id)}
                     >
-                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-full">
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 h-full">
                         {/* Left Column - Showroom Info */}
-                        <div className="lg:col-span-5 flex flex-col space-y-4">
+                        <div className="lg:col-span-5 flex flex-col space-y-3 sm:space-y-4">
                           {/* Header Section */}
-                          <div className="bg-white rounded-2xl p-5 shadow-2xl border border-gray-100">
-                            <div className="flex items-start justify-between mb-4">
-                              <div>
-                                <h3 className="text-2xl font-bold text-gray-900 mb-2">{showroom.name}</h3>
-                                <div className="flex items-center text-gray-600 bg-gray-50 px-3 py-1 rounded-full">
-                                  <MapPin className="h-4 w-4 mr-2 text-blue-600" />
-                                  <span className="text-sm">{showroom.location}</span>
+                          <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-5 shadow-2xl border border-gray-100">
+                            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4">
+                              <div className="flex-1 min-w-0">
+                                <h3 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2 truncate">{showroom.name}</h3>
+                                <div className="flex items-center text-gray-600 bg-gray-50 px-2 sm:px-3 py-1 rounded-full w-fit">
+                                  <MapPin className="h-3 w-3 sm:h-4 sm:w-4 mr-2 text-blue-600 flex-shrink-0" />
+                                  <span className="text-xs sm:text-sm truncate">{showroom.location}</span>
                                 </div>
                               </div>
-                              <div className="bg-green-500 text-white px-3 py-1 rounded-full text-sm font-medium shadow-lg">
+                              <div className="bg-green-500 text-white px-3 py-1 rounded-full text-xs sm:text-sm font-medium shadow-lg flex-shrink-0">
                                 Active
                               </div>
                             </div>
 
                             {/* Rating */}
-                            <div className="flex items-center justify-between p-3 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-xl border border-yellow-200">
+                            <div className="flex items-center justify-between p-2 sm:p-3 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-xl border border-yellow-200">
                               <div className="flex items-center">
-                                <div className="bg-yellow-500 p-2 rounded-lg mr-3">
-                                  <Star className="h-5 w-5 text-white" />
+                                <div className="bg-yellow-500 p-1.5 sm:p-2 rounded-lg mr-2 sm:mr-3 flex-shrink-0">
+                                  <Star className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
                                 </div>
                                 <div>
-                                  <div className="text-lg font-bold text-gray-900">{showroom.rating}/5</div>
+                                  <div className="text-base sm:text-lg font-bold text-gray-900">{showroom.rating}/5</div>
                                   <div className="text-xs text-gray-600">Customer Rating</div>
                                 </div>
                               </div>
-                              <div className="text-right">
+                              <div className="text-right flex-shrink-0">
                                 <div className="text-xs text-gray-500">Rating</div>
                               </div>
                             </div>
                           </div>
 
                           {/* Combined Performance Amount */}
-                          <div className="bg-white rounded-2xl p-5 shadow-2xl border border-gray-100">
+                          <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-5 shadow-2xl border border-gray-100">
                             <div className="text-center">
-                              <div className="text-sm text-gray-600 mb-2">Overall Labour Amount</div>
-                              <div className="text-3xl font-bold text-gray-900 mb-3">₹{(calculateCombinedPerformanceAmount() / 100000).toFixed(2)}L</div>
-                              <div className="px-4 py-2 rounded-full text-sm font-medium border-2 bg-green-100 text-green-600 border-green-200">
+                              <div className="text-xs sm:text-sm text-gray-600 mb-2">Overall Labour Amount</div>
+                              <div className="text-2xl sm:text-3xl font-bold text-gray-900 mb-3">₹{(calculateCombinedPerformanceAmount() / 100000).toFixed(2)}L</div>
+                              <div className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-medium border-2 bg-green-100 text-green-600 border-green-200">
                                 Service + Bodyshop Labour
                               </div>
                             </div>
                           </div>
 
                           {/* Combined Parts Amount */}
-                          <div className="bg-white rounded-2xl p-5 shadow-2xl border border-gray-100">
+                          <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-5 shadow-2xl border border-gray-100">
                             <div className="text-center">
-                              <div className="text-sm text-gray-600 mb-2">Overall Parts Amount</div>
-                              <div className="text-3xl font-bold text-gray-900 mb-3">₹{(calculateCombinedPartsAmount() / 100000).toFixed(2)}L</div>
-                              <div className="px-4 py-2 rounded-full text-sm font-medium border-2 bg-blue-100 text-blue-600 border-blue-200">
+                              <div className="text-xs sm:text-sm text-gray-600 mb-2">Overall Parts Amount</div>
+                              <div className="text-2xl sm:text-3xl font-bold text-gray-900 mb-3">₹{(calculateCombinedPartsAmount() / 100000).toFixed(2)}L</div>
+                              <div className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-medium border-2 bg-blue-100 text-blue-600 border-blue-200">
                                 Service + Bodyshop + Warranty Parts
                               </div>
                             </div>
@@ -780,46 +780,46 @@ const GMDashboard = () => {
                         </div>
 
                         {/* Right Column - Performance Metrics */}
-                        <div className="lg:col-span-7 flex flex-col space-y-4">
+                        <div className="lg:col-span-7 flex flex-col space-y-3 sm:space-y-4">
                           {/* Main Metrics Grid */}
-                          <div className="grid grid-cols-3 gap-4">
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                             {/* Service Labour With VAS - Overall */}
-                            <div className="bg-white rounded-xl p-4 shadow-lg text-center hover:shadow-xl transition-all duration-300 hover:scale-105 border border-emerald-100">
-                              <div className="flex justify-center mb-3">
-                                <div className="bg-emerald-100 p-3 rounded-xl">
-                                  <Wrench className="h-6 w-6 text-emerald-600" />
+                            <div className="bg-white rounded-xl p-3 sm:p-4 shadow-lg text-center hover:shadow-xl transition-all duration-300 hover:scale-105 border border-emerald-100">
+                              <div className="flex justify-center mb-2 sm:mb-3">
+                                <div className="bg-emerald-100 p-2 sm:p-3 rounded-xl">
+                                  <Wrench className="h-5 w-5 sm:h-6 sm:w-6 text-emerald-600" />
                                 </div>
                               </div>
-                              <div className="text-lg font-bold text-gray-900 mb-1">{formatCurrency(calculateServiceLabourWithVAS())}</div>
-                              <div className="text-sm text-gray-600 mb-2">Service Labour With VAS</div>
+                              <div className="text-base sm:text-lg font-bold text-gray-900 mb-1">{formatCurrency(calculateServiceLabourWithVAS())}</div>
+                              <div className="text-xs sm:text-sm text-gray-600 mb-2">Service Labour With VAS</div>
                               <div className="text-xs text-emerald-600 font-medium bg-emerald-50 px-2 py-1 rounded-full border border-emerald-200">
                                 Overall
                               </div>
                             </div>
 
                             {/* Service Labour Without VAS - Overall */}
-                            <div className="bg-white rounded-xl p-4 shadow-lg text-center hover:shadow-xl transition-all duration-300 hover:scale-105 border border-blue-100">
-                              <div className="flex justify-center mb-3">
-                                <div className="bg-blue-100 p-3 rounded-xl">
-                                  <Shield className="h-6 w-6 text-blue-600" />
+                            <div className="bg-white rounded-xl p-3 sm:p-4 shadow-lg text-center hover:shadow-xl transition-all duration-300 hover:scale-105 border border-blue-100">
+                              <div className="flex justify-center mb-2 sm:mb-3">
+                                <div className="bg-blue-100 p-2 sm:p-3 rounded-xl">
+                                  <Shield className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
                                 </div>
                               </div>
-                              <div className="text-lg font-bold text-gray-900 mb-1">{formatCurrency(calculateServiceLabourWithoutVAS())}</div>
-                              <div className="text-sm text-gray-600 mb-2">Service Labour Without VAS</div>
+                              <div className="text-base sm:text-lg font-bold text-gray-900 mb-1">{formatCurrency(calculateServiceLabourWithoutVAS())}</div>
+                              <div className="text-xs sm:text-sm text-gray-600 mb-2">Service Labour Without VAS</div>
                               <div className="text-xs text-blue-600 font-medium bg-blue-50 px-2 py-1 rounded-full border border-blue-200">
                                 Overall
                               </div>
                             </div>
 
                             {/* Service With Free Service Labour */}
-                            <div className="bg-white rounded-xl p-4 shadow-lg text-center hover:shadow-xl transition-all duration-300 hover:scale-105 border border-orange-100">
-                              <div className="flex justify-center mb-3">
-                                <div className="bg-orange-100 p-3 rounded-xl">
-                                  <Award className="h-6 w-6 text-orange-600" />
+                            <div className="bg-white rounded-xl p-3 sm:p-4 shadow-lg text-center hover:shadow-xl transition-all duration-300 hover:scale-105 border border-orange-100">
+                              <div className="flex justify-center mb-2 sm:mb-3">
+                                <div className="bg-orange-100 p-2 sm:p-3 rounded-xl">
+                                  <Award className="h-5 w-5 sm:h-6 sm:w-6 text-orange-600" />
                                 </div>
                               </div>
-                              <div className="text-lg font-bold text-gray-900 mb-1">{formatCurrency(calculateServiceWithFreeServiceLabour())}</div>
-                              <div className="text-sm text-gray-600 mb-2">Service With Free Service Labour</div>
+                              <div className="text-base sm:text-lg font-bold text-gray-900 mb-1">{formatCurrency(calculateServiceWithFreeServiceLabour())}</div>
+                              <div className="text-xs sm:text-sm text-gray-600 mb-2">Service With Free Service Labour</div>
                               <div className="text-xs text-orange-600 font-medium bg-orange-50 px-2 py-1 rounded-full border border-orange-200">
                                 RO + Warranty FSC
                               </div>
@@ -827,42 +827,42 @@ const GMDashboard = () => {
                           </div>
 
                           {/* Bodyshop Performance (Accidental Repair) */}
-                          <div className="bg-white rounded-2xl p-5 shadow-2xl border border-gray-100">
-                            <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                              <Car className="h-5 w-5 text-red-600 mr-2" />
-                              Bodyshop Performance (Accidental Repair)
+                          <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-5 shadow-2xl border border-gray-100">
+                            <h4 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4 flex items-center">
+                              <Car className="h-4 w-4 sm:h-5 sm:w-5 text-red-600 mr-2 flex-shrink-0" />
+                              <span className="text-xs sm:text-base">Bodyshop Performance (Accidental Repair)</span>
                             </h4>
                             {(() => {
                               const bodyshopMetrics = calculateBodyshopMetrics();
                               return (
-                                <div className="grid grid-cols-2 gap-4">
-                                  <div className="flex items-center justify-between p-3 bg-gradient-to-r from-red-50 to-pink-50 rounded-xl border border-red-200">
-                                    <div className="flex items-center">
-                                      <FileText className="h-4 w-4 text-red-600 mr-2" />
-                                      <span className="text-sm text-gray-700">ROs Body Shop</span>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                                  <div className="flex items-center justify-between p-2.5 sm:p-3 bg-gradient-to-r from-red-50 to-pink-50 rounded-xl border border-red-200">
+                                    <div className="flex items-center min-w-0">
+                                      <FileText className="h-3 w-3 sm:h-4 sm:w-4 text-red-600 mr-2 flex-shrink-0" />
+                                      <span className="text-xs sm:text-sm text-gray-700 truncate">ROs Body Shop</span>
                                     </div>
-                                    <span className="text-lg font-bold text-gray-900">{bodyshopMetrics.totalROs}</span>
+                                    <span className="text-base sm:text-lg font-bold text-gray-900 ml-2 flex-shrink-0">{bodyshopMetrics.totalROs}</span>
                                   </div>
-                                  <div className="flex items-center justify-between p-3 bg-gradient-to-r from-orange-50 to-amber-50 rounded-xl border border-orange-200">
-                                    <div className="flex items-center">
-                                      <IndianRupee className="h-4 w-4 text-orange-600 mr-2" />
-                                      <span className="text-sm text-gray-700">Per RO</span>
+                                  <div className="flex items-center justify-between p-2.5 sm:p-3 bg-gradient-to-r from-orange-50 to-amber-50 rounded-xl border border-orange-200">
+                                    <div className="flex items-center min-w-0">
+                                      <IndianRupee className="h-3 w-3 sm:h-4 sm:w-4 text-orange-600 mr-2 flex-shrink-0" />
+                                      <span className="text-xs sm:text-sm text-gray-700 truncate">Per RO</span>
                                     </div>
-                                    <span className="text-lg font-bold text-gray-900">₹{((bodyshopMetrics.perRO) / 100000).toFixed(2)}L</span>
+                                    <span className="text-base sm:text-lg font-bold text-gray-900 ml-2 flex-shrink-0">₹{((bodyshopMetrics.perRO) / 100000).toFixed(2)}L</span>
                                   </div>
-                                  <div className="flex items-center justify-between p-3 bg-gradient-to-r from-blue-50 to-cyan-50 rounded-xl border border-blue-200">
-                                    <div className="flex items-center">
-                                      <Wrench className="h-4 w-4 text-blue-600 mr-2" />
-                                      <span className="text-sm text-gray-700">Labour Amount</span>
+                                  <div className="flex items-center justify-between p-2.5 sm:p-3 bg-gradient-to-r from-blue-50 to-cyan-50 rounded-xl border border-blue-200">
+                                    <div className="flex items-center min-w-0">
+                                      <Wrench className="h-3 w-3 sm:h-4 sm:w-4 text-blue-600 mr-2 flex-shrink-0" />
+                                      <span className="text-xs sm:text-sm text-gray-700 truncate">Labour Amount</span>
                                     </div>
-                                    <span className="text-lg font-bold text-gray-900">₹{((bodyshopMetrics.totalLabour) / 100000).toFixed(2)}L</span>
+                                    <span className="text-base sm:text-lg font-bold text-gray-900 ml-2 flex-shrink-0">₹{((bodyshopMetrics.totalLabour) / 100000).toFixed(2)}L</span>
                                   </div>
-                                  <div className="flex items-center justify-between p-3 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border border-green-200">
-                                    <div className="flex items-center">
-                                      <Package className="h-4 w-4 text-green-600 mr-2" />
-                                      <span className="text-sm text-gray-700">Part Amount</span>
+                                  <div className="flex items-center justify-between p-2.5 sm:p-3 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border border-green-200">
+                                    <div className="flex items-center min-w-0">
+                                      <Package className="h-3 w-3 sm:h-4 sm:w-4 text-green-600 mr-2 flex-shrink-0" />
+                                      <span className="text-xs sm:text-sm text-gray-700 truncate">Part Amount</span>
                                     </div>
-                                    <span className="text-lg font-bold text-gray-900">₹{((bodyshopMetrics.totalParts) / 100000).toFixed(2)}L</span>
+                                    <span className="text-base sm:text-lg font-bold text-gray-900 ml-2 flex-shrink-0">₹{((bodyshopMetrics.totalParts) / 100000).toFixed(2)}L</span>
                                   </div>
                                 </div>
                               );
@@ -870,15 +870,15 @@ const GMDashboard = () => {
                           </div>
 
                           {/* Achievements Section */}
-                          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl p-4 shadow-lg border border-blue-200">
-                            <h4 className="text-sm font-semibold text-gray-900 mb-3 text-center">
+                          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl sm:rounded-2xl p-3 sm:p-4 shadow-lg border border-blue-200">
+                            <h4 className="text-xs sm:text-sm font-semibold text-gray-900 mb-2 sm:mb-3 text-center">
                               🏆 Achievements
                             </h4>
                             <div className="flex flex-wrap gap-2 justify-center">
                               {showroom.achievements.map((achievement, index) => (
                                 <span
                                   key={index}
-                                  className="bg-white text-gray-800 px-3 py-1 rounded-full text-xs font-medium border border-gray-200 shadow-sm"
+                                  className="bg-white text-gray-800 px-2 sm:px-3 py-1 rounded-full text-xs font-medium border border-gray-200 shadow-sm"
                                 >
                                   {achievement}
                                 </span>

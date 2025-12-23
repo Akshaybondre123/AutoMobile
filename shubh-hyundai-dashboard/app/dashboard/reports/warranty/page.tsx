@@ -24,7 +24,24 @@ export default function WarrantyPage() {
 
   useEffect(() => {
     const dataArray = Array.isArray(dashboardData?.data) ? dashboardData.data : []
-    setData(dataArray)
+    // Map backend field names (snake_case) to frontend field names (camelCase)
+    const mappedData = dataArray.map((record: any) => ({
+      claimDate: record.claim_date || record.claimDate || '',
+      claimType: record.claim_type || record.claimType || '',
+      status: record.claim_status || record.status || '',
+      labour: record.labour_amount || record.labour || 0,
+      part: record.part_amount || record.part || 0,
+      // Include other fields if needed
+      claimNumber: record.claim_number || record.claimNumber || '',
+      vehicleNumber: record.vehicle_number || record.vehicleNumber || '',
+      customerName: record.customer_name || record.customerName || '',
+      totalAmount: record.total_claim_amount || record.totalAmount || 0,
+      approvedAmount: record.approved_amount || record.approvedAmount || 0,
+      roNumber: record.RO_No || record.roNumber || record.ro_no || '',
+      // Keep original record for debugging
+      _original: record
+    }))
+    setData(mappedData)
   }, [dashboardData])
   
   // Check permission first
@@ -44,9 +61,9 @@ export default function WarrantyPage() {
     )
   }
 
-  const totalLabour = data.reduce((sum, row) => sum + (row.labour || 0), 0)
-  const totalPart = data.reduce((sum, row) => sum + (row.part || 0), 0)
-  const totalClaims = totalLabour + totalPart
+  const totalLabour = data.reduce((sum, row) => sum + (Number(row.labour) || 0), 0)
+  const totalPart = data.reduce((sum, row) => sum + (Number(row.part) || 0), 0)
+  const totalClaims = data.length
 
   return (
     <div className="space-y-6">
@@ -98,27 +115,39 @@ export default function WarrantyPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.map((record, idx) => (
-                    <tr key={idx} className="border-b hover:bg-muted/50">
-                      <td className="py-3 px-4">{record.claimDate}</td>
-                      <td className="py-3 px-4">{record.claimType}</td>
-                      <td className="text-center py-3 px-4">
-                        <span
-                          className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            record.status?.toLowerCase() === "approved"
-                              ? "bg-green-100 text-green-800"
-                              : record.status?.toLowerCase() === "rejected"
-                                ? "bg-red-100 text-red-800"
-                                : "bg-yellow-100 text-yellow-800"
-                          }`}
-                        >
-                          {record.status}
-                        </span>
-                      </td>
-                      <td className="text-right py-3 px-4">₹{record.labour?.toLocaleString()}</td>
-                      <td className="text-right py-3 px-4">₹{record.part?.toLocaleString()}</td>
-                    </tr>
-                  ))}
+                  {data.map((record, idx) => {
+                    const claimDate = record.claimDate || record._original?.claim_date || 'N/A'
+                    const claimType = record.claimType || record._original?.claim_type || 'N/A'
+                    const status = record.status || record._original?.claim_status || 'Pending'
+                    const labour = Number(record.labour) || 0
+                    const part = Number(record.part) || 0
+                    
+                    return (
+                      <tr key={idx} className="border-b hover:bg-muted/50">
+                        <td className="py-3 px-4 text-sm">{claimDate}</td>
+                        <td className="py-3 px-4 text-sm">{claimType}</td>
+                        <td className="text-center py-3 px-4">
+                          <span
+                            className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              status?.toLowerCase() === "approved" || status?.toLowerCase() === "approve"
+                                ? "bg-green-100 text-green-800"
+                                : status?.toLowerCase() === "rejected" || status?.toLowerCase() === "reject"
+                                  ? "bg-red-100 text-red-800"
+                                  : "bg-yellow-100 text-yellow-800"
+                            }`}
+                          >
+                            {status}
+                          </span>
+                        </td>
+                        <td className="text-right py-3 px-4 text-sm font-medium">
+                          {labour > 0 ? `₹${labour.toLocaleString('en-IN')}` : '₹0'}
+                        </td>
+                        <td className="text-right py-3 px-4 text-sm font-medium">
+                          {part > 0 ? `₹${part.toLocaleString('en-IN')}` : '₹0'}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

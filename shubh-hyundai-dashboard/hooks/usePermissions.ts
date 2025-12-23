@@ -418,16 +418,19 @@ export function usePermissions() {
         "operations_dashboard",
         "warranty_dashboard",
         "service_booking_dashboard",
+        "repair_order_list_dashboard",
         "manage_users",
         "manage_roles",
         "ro_billing_upload",
         "operations_upload",
         "warranty_upload",
         "service_booking_upload",
+        "repair_order_list_upload",
         "ro_billing_report",
         "operations_report",
         "warranty_report",
         "service_booking_report",
+        "repair_order_list_report",
         "target_report"
       ]
     }
@@ -442,16 +445,19 @@ export function usePermissions() {
           "operations_dashboard",
           "warranty_dashboard",
           "service_booking_dashboard",
+          "repair_order_list_dashboard",
           "manage_users",
           "manage_roles",
           "ro_billing_upload",
           "operations_upload",
           "warranty_upload",
           "service_booking_upload",
+          "repair_order_list_upload",
           "ro_billing_report",
           "operations_report",
           "warranty_report",
           "service_booking_report",
+          "repair_order_list_report",
           "target_report"
         ]
       case "service_manager":

@@ -366,6 +366,7 @@ export const seedPermissions = async (req, res) => {
       { permission_key: "operations_report", name: "Operations Report" },
       { permission_key: "warranty_report", name: "Warranty Report" },
       { permission_key: "service_booking_report", name: "Service Booking Report" },
+      { permission_key: "repair_order_list_report", name: "Repair Order List Report" },
       { permission_key: "target_report", name: "Target Report" },
       
       // CRUD Permissions

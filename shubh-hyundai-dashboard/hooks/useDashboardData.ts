@@ -184,19 +184,50 @@ export const useDashboardData = (options: UseDashboardDataOptions): UseDashboard
         // (Under-specification: assume user object may have showroom_id or showroomId)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userAny: any = user
-        const userShowroomId = userAny?.showroom_id || userAny?.showroomId
+        let userShowroomId = userAny?.showroom_id || userAny?.showroomId
+        
+        // If showroom_id is not available, try to fetch it from the showrooms API
         if (!userShowroomId) {
-          const errorMessage = 'Showroom is not configured for this user. Please select a showroom in your profile.'
-          console.warn('Missing showroom_id for service_booking fetch')
-          setError(user.email, dataType, errorMessage, user.city)
+          console.warn('⚠️ Missing showroom_id for service_booking fetch, attempting to fetch from API...')
+          try {
+            const showroomsResponse = await fetch(getApiUrl("/api/rbac/showrooms"), {
+              credentials: 'include',
+              headers: {
+                'Content-Type': 'application/json',
+              }
+            })
+            
+            if (showroomsResponse.ok) {
+              const showroomsResult = await showroomsResponse.json()
+              if (showroomsResult.success && Array.isArray(showroomsResult.data) && showroomsResult.data.length > 0) {
+                const firstShowroom = showroomsResult.data[0]
+                userShowroomId = firstShowroom._id
+                console.log('✅ Fetched showroom_id from API:', userShowroomId)
+              }
+            }
+          } catch (showroomFetchError) {
+            console.error('❌ Error fetching showroom_id:', showroomFetchError)
+          }
+        }
+        
+        if (!userShowroomId) {
+          const errorMessage = 'Showroom is not configured for this user. Please contact administrator to assign a showroom to your account.'
+          console.warn('❌ Missing showroom_id for service_booking fetch - cannot proceed')
+          setError(user.email, dataType, errorMessage, fetchCity)
           // Clean up state and return early
-          setLoading(user.email, dataType, false, user.city)
+          setLoading(user.email, dataType, false, fetchCity)
           fetchInProgressRef.current.delete(fetchKey)
           return
         }
 
-        apiUrl = getApiUrl(`/api/booking-list/dashboard?uploadedBy=${user.email}&city=${fetchCity}&showroom_id=${userShowroomId}`)
+        apiUrl = getApiUrl(`/api/booking-list/dashboard?uploadedBy=${encodeURIComponent(user.email)}&city=${encodeURIComponent(fetchCity)}&showroom_id=${encodeURIComponent(userShowroomId)}`)
         console.log('🔗 Fetching BookingList with VIN matching:', dataType)
+        console.log('🌐 BookingList API URL:', apiUrl)
+        console.log('📋 Request params:', {
+          uploadedBy: user.email,
+          city: fetchCity,
+          showroom_id: userShowroomId
+        })
       } else {
         const summaryFlag = summary ? '&summary=true' : ''
         apiUrl = getApiUrl(`/api/service-manager/dashboard-data?uploadedBy=${user.email}&city=${fetchCity}&dataType=${dataType}${summaryFlag}`)
@@ -209,14 +240,17 @@ export const useDashboardData = (options: UseDashboardDataOptions): UseDashboard
       const timeoutId = setTimeout(() => controller.abort(), 30000)
       
       try {
+        console.log('🌐 Making fetch request to:', apiUrl)
         const response = await fetch(apiUrl, {
           signal: controller.signal,
           credentials: 'include',
           headers: {
             'Content-Type': 'application/json',
-          }
+          },
+          mode: 'cors'
         })
         clearTimeout(timeoutId)
+        console.log('📡 Response status:', response.status, response.statusText)
 
       if (!response.ok) {
         const errorText = await response.text()
@@ -248,16 +282,37 @@ export const useDashboardData = (options: UseDashboardDataOptions): UseDashboard
           console.error('⏱️ Fetch timeout after 30 seconds for:', dataType)
           throw new Error('Request timeout: The server took too long to respond. Please try again.')
         }
+        // Check if it's a network error (CORS, connection refused, etc.)
+        if (fetchErr instanceof TypeError && (
+          fetchErr.message.includes('fetch') || 
+          fetchErr.message.includes('Failed to fetch') ||
+          fetchErr.message.includes('NetworkError') ||
+          fetchErr.message.includes('Network request failed')
+        )) {
+          console.error('🌐 Network error detected:', fetchErr.message)
+          throw new Error(`Network error: Unable to reach API at ${apiUrl}. Please check your connection and that the backend is running.`)
+        }
         throw fetchErr
       }
       
     } catch (err: any) {
-      const errorMessage = err?.message || "Failed to load data. Please try again."
+      let errorMessage = err?.message || "Failed to load data. Please try again."
+      
+      // Provide more specific error messages
+      if (err?.message?.includes('Network error')) {
+        errorMessage = err.message
+      } else if (err?.message?.includes('timeout')) {
+        errorMessage = err.message
+      } else if (err?.message?.includes('Showroom is not configured')) {
+        errorMessage = err.message
+      }
+      
       console.error('❌ Fetch error for', dataType, ':', err)
       console.error('❌ Error details:', {
         message: err?.message,
         name: err?.name,
-        stack: err?.stack
+        stack: err?.stack,
+        apiUrl: dataType === 'service_booking' ? getApiUrl(`/api/booking-list/dashboard?uploadedBy=${user?.email}&city=${fetchCity}&showroom_id=${(user as any)?.showroom_id || (user as any)?.showroomId || 'MISSING'}`) : 'N/A'
       })
       setError(user.email, dataType, errorMessage, fetchCity)
     } finally {

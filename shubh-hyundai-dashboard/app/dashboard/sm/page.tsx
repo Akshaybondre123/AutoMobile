@@ -325,22 +325,22 @@ Upload Time: ${result.uploadDate}`)
   return (
 <Card className="border-2 border-indigo-200 bg-gradient-to-br from-white to-indigo-50/30 shadow-lg">
   <CardHeader className="bg-gradient-to-r from-indigo-50 to-purple-50 border-b border-indigo-200">
-    <div className="flex items-center justify-between">
+    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
       <div className="flex items-center gap-3">
-        <div className="rounded-lg bg-indigo-100 p-2">
+        <div className="rounded-lg bg-indigo-100 p-2 flex-shrink-0">
           <FileText className="h-5 w-5 text-indigo-600" />
         </div>
         <div>
-          <CardTitle className="text-xl text-gray-900">Repair Order List</CardTitle>
-          <CardDescription>Service Advisor → Work Type → Status breakdown with date filtering</CardDescription>
+          <CardTitle className="text-lg md:text-xl text-gray-900">Repair Order List</CardTitle>
+          <CardDescription className="text-xs md:text-sm">Service Advisor → Work Type → Status breakdown with date filtering</CardDescription>
         </div>
       </div>
-      <div className="flex items-center gap-3">
-        <Badge variant="secondary" className="bg-indigo-100 text-indigo-800">
-          {filteredData.length} Records
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+        <Badge variant="secondary" className="bg-indigo-100 text-indigo-800 text-center sm:text-left">
+          {formatNumber(filteredData.length)} Records
         </Badge>
-        <div className="flex items-center gap-2">
-          <label htmlFor="date-filter" className="text-sm font-medium text-gray-700">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          <label htmlFor="date-filter" className="text-xs sm:text-sm font-medium text-gray-700 whitespace-nowrap">
             Filter by R/O Date:
           </label>
           <input
@@ -348,20 +348,20 @@ Upload Time: ${result.uploadDate}`)
             type="date"
             value={dateFilter}
             onChange={(e) => setDateFilter(e.target.value)}
-            className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-auto"
           />
           {dateFilter && (
             <Button
               onClick={() => setDateFilter('')}
               variant="outline"
               size="sm"
-              className="text-xs"
+              className="text-xs w-full sm:w-auto"
             >
               Clear
             </Button>
           )}
         </div>
-        <div>
+        <div className="w-full sm:w-auto">
           <input
             type="file"
             ref={fileInputRef}
@@ -371,12 +371,12 @@ Upload Time: ${result.uploadDate}`)
             className="hidden"
             id="repair-order-file-input"
           />
-          <label htmlFor="repair-order-file-input">
+          <label htmlFor="repair-order-file-input" className="w-full sm:w-auto">
             <Button
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={uploadingFile}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white w-full sm:w-auto"
               size="sm"
             >
               {uploadingFile ? (
@@ -443,33 +443,35 @@ Upload Time: ${result.uploadDate}`)
                 className="bg-gradient-to-r from-indigo-50 to-white py-3 cursor-pointer hover:bg-indigo-100 transition-colors"
                 onClick={() => setExpandedAdvisors(prev => ({ ...prev, [advisor]: !prev[advisor] }))}
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
                       <span className="text-indigo-700 font-bold text-sm">
                         {advisor.charAt(0).toUpperCase()}
                       </span>
                     </div>
-                    <CardTitle className="text-lg text-gray-900">{advisor}</CardTitle>
-                    <Badge variant="outline" className="bg-indigo-50 text-indigo-700">
-                      Service Advisor
-                    </Badge>
+                    <div className="flex-1 min-w-0">
+                      <CardTitle className="text-base sm:text-lg text-gray-900 truncate">{advisor}</CardTitle>
+                      <Badge variant="outline" className="bg-indigo-50 text-indigo-700 text-xs mt-1 sm:mt-0 sm:ml-2">
+                        Service Advisor
+                      </Badge>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     {/* UPDATED SECTION: Added Open count badge in the middle */}
-                    <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
+                    <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200 text-xs">
                       <div className="flex items-center gap-1">
                         <div className="w-2 h-2 rounded-full bg-orange-500"></div>
-                        <span>Open - {advisorOpenRecords}</span>
+                        <span>Open - {formatNumber(advisorOpenRecords)}</span>
                       </div>
                     </Badge>
-                    <Badge variant="outline" className="bg-purple-50 text-purple-700">
-                      {Object.keys(workTypes).length} Work Types
+                    <Badge variant="outline" className="bg-purple-50 text-purple-700 text-xs">
+                      {formatNumber(Object.keys(workTypes).length)} Work Types
                     </Badge>
-                    <Badge variant="outline" className="bg-green-50 text-green-700">
-                      {advisorTotalRecords} Records
+                    <Badge variant="outline" className="bg-green-50 text-green-700 text-xs">
+                      {formatNumber(advisorTotalRecords)} Records
                     </Badge>
-                    <div className="text-gray-400">
+                    <div className="text-gray-400 text-lg ml-auto sm:ml-0">
                       {expandedAdvisors[advisor] ? '▼' : '▶'}
                     </div>
                   </div>
@@ -488,18 +490,18 @@ Upload Time: ${result.uploadDate}`)
                       
                       return (
                         <div key={workType} className="mb-6 last:mb-0">
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-2">
-                              <div className="w-6 h-6 rounded bg-purple-100 flex items-center justify-center">
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <div className="w-6 h-6 rounded bg-purple-100 flex items-center justify-center flex-shrink-0">
                                 <Wrench className="h-3 w-3 text-purple-600" />
                               </div>
-                              <h4 className="font-semibold text-gray-800">{workType}</h4>
+                              <h4 className="font-semibold text-gray-800 text-sm sm:text-base">{workType}</h4>
                               <Badge variant="outline" className="bg-purple-50 text-purple-700 text-xs">
                                 Work Type
                               </Badge>
                             </div>
-                            <Badge variant="outline" className="bg-blue-50 text-blue-700">
-                              {workTypeTotalRecords} Records
+                            <Badge variant="outline" className="bg-blue-50 text-blue-700 text-xs sm:text-sm">
+                              {formatNumber(workTypeTotalRecords)} Records
                             </Badge>
                           </div>
                           
@@ -516,27 +518,31 @@ Upload Time: ${result.uploadDate}`)
                                 
                                 {/* Show detailed table only for Open status */}
                                 {status.toLowerCase() === 'open' && (
-                                  <div className="ml-6 overflow-x-auto">
-                                    <table className="w-full text-sm border border-gray-200 rounded-lg">
-                                      <thead>
-                                        <tr className="bg-gray-50 border-b">
-                                          <th className="text-left py-2 px-3 font-medium text-gray-700">Model</th>
-                                          <th className="text-left py-2 px-3 font-medium text-gray-700">Reg No</th>
-                                          <th className="text-left py-2 px-3 font-medium text-gray-700">R/O No</th>
-                                          <th className="text-left py-2 px-3 font-medium text-gray-700">R/O Date</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody>
-                                        {records.map((record: any, idx: number) => (
-                                          <tr key={idx} className="border-b hover:bg-green-50">
-                                            <td className="py-2 px-3">{record.model}</td>
-                                            <td className="py-2 px-3">{record.reg_no}</td>
-                                            <td className="py-2 px-3 font-medium">{record.ro_no}</td>
-                                            <td className="py-2 px-3 text-blue-600">{formatRODate(record.ro_date)}</td>
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
+                                  <div className="ml-0 sm:ml-6 overflow-x-auto -mx-4 sm:mx-0">
+                                    <div className="inline-block min-w-full align-middle">
+                                      <div className="overflow-hidden">
+                                        <table className="min-w-full divide-y divide-gray-200 text-sm border border-gray-200 rounded-lg">
+                                          <thead className="bg-gray-50">
+                                            <tr>
+                                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Model</th>
+                                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Reg No</th>
+                                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">R/O No</th>
+                                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">R/O Date</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody className="bg-white divide-y divide-gray-200">
+                                            {records.map((record: any, idx: number) => (
+                                              <tr key={idx} className="hover:bg-green-50">
+                                                <td className="px-3 py-2 whitespace-nowrap text-xs sm:text-sm">{record.model || 'N/A'}</td>
+                                                <td className="px-3 py-2 whitespace-nowrap text-xs sm:text-sm">{record.reg_no || 'N/A'}</td>
+                                                <td className="px-3 py-2 whitespace-nowrap text-xs sm:text-sm font-medium">{record.ro_no || 'N/A'}</td>
+                                                <td className="px-3 py-2 whitespace-nowrap text-xs sm:text-sm text-blue-600">{formatRODate(record.ro_date)}</td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </div>
                                   </div>
                                 )}
                               </div>
@@ -547,7 +553,7 @@ Upload Time: ${result.uploadDate}`)
                   </>
                 ) : (
                   // Collapsed view - show summary of work types
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     {Object.entries(workTypes).map(([workType, statuses]: [string, any]) => {
                       // Calculate total records for this work type
                       let workTypeTotalRecords = 0;
@@ -564,21 +570,23 @@ Upload Time: ${result.uploadDate}`)
                           className="border border-gray-200 rounded-lg p-3 hover:bg-gray-50 transition-colors"
                         >
                           <div className="flex items-center gap-2 mb-2">
-                            <div className="w-5 h-5 rounded bg-purple-100 flex items-center justify-center">
+                            <div className="w-5 h-5 rounded bg-purple-100 flex items-center justify-center flex-shrink-0">
                               <Wrench className="h-2.5 w-2.5 text-purple-600" />
                             </div>
-                            <span className="font-medium text-gray-800 text-sm">{workType}</span>
+                            <span className="font-medium text-gray-800 text-xs sm:text-sm truncate">{workType}</span>
                           </div>
-                          <div className="flex items-center justify-between text-xs">
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs">
                             <div className="flex items-center gap-1">
-                              <div className="w-3 h-3 rounded-full bg-green-100 flex items-center justify-center">
+                              <div className="w-3 h-3 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
                                 <CheckCircle className="h-1.5 w-1.5 text-green-600" />
                               </div>
-                              <span className="text-gray-600">{workTypeTotalRecords} Records</span>
+                              <span className="text-gray-600">
+                                <span className="font-bold">{formatNumber(workTypeTotalRecords)}</span> Records
+                              </span>
                             </div>
                             {openRecords > 0 && (
-                              <Badge variant="outline" className="bg-orange-50 text-orange-700">
-                                {openRecords} Open
+                              <Badge variant="outline" className="bg-orange-50 text-orange-700 text-xs w-fit">
+                                <span className="font-bold">{formatNumber(openRecords)}</span> Open
                               </Badge>
                             )}
                           </div>
@@ -3362,23 +3370,23 @@ export default function SMDashboard() {
                   </div>
                   <div>
                     <p className="font-bold text-gray-900 text-lg">{advisor}</p>
-                    <div className="flex items-center gap-4 mt-2">
+                    <div className="flex flex-wrap items-center gap-2 md:gap-4 mt-2">
                       <div className="flex items-center gap-2 bg-blue-50 px-3 py-1.5 rounded-full">
                         <div className="w-2 h-2 rounded-full bg-blue-500"></div>
                         <p className="text-sm font-medium text-blue-700">
-                          {totalBookings} <span className="text-gray-600">bookings</span>
+                          <span className="font-bold">{formatNumber(totalBookings)}</span> <span className="text-gray-600">bookings</span>
                         </p>
                       </div>
                       <div className="flex items-center gap-2 bg-emerald-50 px-3 py-1.5 rounded-full">
                         <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
                         <p className="text-sm font-medium text-emerald-700">
-                          {conversionRate}% <span className="text-gray-600">conversion</span>
+                          <span className="font-bold">{formatNumber(totalConverted)}</span> <span className="text-gray-600">converted</span> <span className="text-gray-500">({formatNumber(conversionRate)}%)</span>
                         </p>
                       </div>
                       <div className="flex items-center gap-2 bg-purple-50 px-3 py-1.5 rounded-full">
                         <div className="w-2 h-2 rounded-full bg-purple-500"></div>
                         <p className="text-sm font-medium text-purple-700">
-                          {workTypes.length} <span className="text-gray-600">work types</span>
+                          <span className="font-bold">{formatNumber(workTypes.length)}</span> <span className="text-gray-600">work types</span>
                         </p>
                       </div>
                     </div>
@@ -3387,7 +3395,7 @@ export default function SMDashboard() {
                 
                 <div className="flex items-center gap-4">
                   <div className="text-right">
-                    <div className="text-2xl font-bold text-emerald-700">{totalBookings}</div>
+                    <div className="text-2xl font-bold text-emerald-700">{formatNumber(totalBookings)}</div>
                     <p className="text-sm text-gray-500">Total Bookings</p>
                   </div>
                   <div className="text-gray-400 text-xl">
@@ -3399,11 +3407,11 @@ export default function SMDashboard() {
               {/* Work Type Summary - Horizontal Row Layout */}
               {!isExpanded && workTypes.length > 0 && (
                 <div className="mt-4 pt-4 border-t border-gray-100">
-                  <div className="flex flex-wrap gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 overflow-x-auto">
                     {workTypes.map((workType, idx) => (
                       <div 
                         key={idx} 
-                        className="flex items-center gap-3 bg-gradient-to-r from-gray-50 to-white p-3 rounded-lg border border-gray-200 hover:border-emerald-200 transition-colors min-w-[200px]"
+                        className="flex flex-col sm:flex-row items-start sm:items-center gap-3 bg-gradient-to-r from-gray-50 to-white p-3 rounded-lg border border-gray-200 hover:border-emerald-200 transition-colors w-full sm:min-w-0"
                       >
                         <div className="flex-shrink-0">
                           <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
@@ -3412,26 +3420,30 @@ export default function SMDashboard() {
                             </span>
                           </div>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-gray-900 truncate">{workType.workType}</p>
-                          <div className="flex items-center gap-3 mt-1">
+                        <div className="flex-1 min-w-0 w-full sm:w-auto">
+                          <p className="font-semibold text-gray-900 truncate text-sm sm:text-base">{workType.workType}</p>
+                          <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-1">
                             <div className="flex items-center gap-1">
                               <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
-                              <p className="text-xs font-medium text-gray-700">{workType.count} bookings</p>
+                              <p className="text-xs font-medium text-gray-700">
+                                <span className="font-bold">{formatNumber(workType.count)}</span> bookings
+                              </p>
                             </div>
                             <div className="flex items-center gap-1">
                               <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
-                              <p className="text-xs font-medium text-gray-700">{workType.converted} converted</p>
+                              <p className="text-xs font-medium text-gray-700">
+                                <span className="font-bold">{formatNumber(workType.converted)}</span> converted
+                              </p>
                             </div>
                           </div>
                         </div>
-                        <div className="flex-shrink-0">
-                          <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-bold ${
+                        <div className="flex-shrink-0 w-full sm:w-auto">
+                          <span className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-sm font-bold w-full sm:w-auto ${
                             workType.conversionRate >= 80 ? 'bg-green-100 text-green-800' :
                             workType.conversionRate >= 60 ? 'bg-yellow-100 text-yellow-800' :
                             'bg-red-100 text-red-800'
                           }`}>
-                            {workType.conversionRate}%
+                            <span className="font-bold">{formatNumber(workType.conversionRate)}%</span>
                           </span>
                         </div>
                       </div>
@@ -3441,7 +3453,7 @@ export default function SMDashboard() {
                   {workTypes.length > 4 && (
                     <div className="mt-3 text-center">
                       <p className="text-sm text-gray-500">
-                        <span className="font-medium">+{workTypes.length - 4} more</span> work types available
+                        <span className="font-medium">+{formatNumber(workTypes.length - 4)} more</span> work types available
                       </p>
                     </div>
                   )}
@@ -3468,13 +3480,13 @@ export default function SMDashboard() {
                             <div className="flex items-center gap-2">
                               <div className="w-2 h-2 rounded-full bg-blue-500"></div>
                               <p className="text-sm font-medium text-gray-700">
-                                {workType.count} total bookings
+                                <span className="font-bold">{formatNumber(workType.count)}</span> total bookings
                               </p>
                             </div>
                             <div className="flex items-center gap-2">
                               <div className="w-2 h-2 rounded-full bg-green-500"></div>
                               <p className="text-sm font-medium text-gray-700">
-                                {workType.converted} converted ({workType.conversionRate}%)
+                                <span className="font-bold">{formatNumber(workType.converted)}</span> converted (<span className="font-bold">{formatNumber(workType.conversionRate)}%</span>)
                               </p>
                             </div>
                           </div>
@@ -3486,7 +3498,7 @@ export default function SMDashboard() {
                           workType.conversionRate >= 60 ? 'text-yellow-600' :
                           'text-red-600'
                         }`}>
-                          {workType.conversionRate}%
+                          {formatNumber(workType.conversionRate)}%
                         </div>
                         <p className="text-sm text-gray-500">Conversion Rate</p>
                       </div>

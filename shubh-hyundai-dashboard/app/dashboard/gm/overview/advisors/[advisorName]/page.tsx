@@ -98,14 +98,24 @@ const AdvisorDetailPage = () => {
         let operationsData = { data: [] };
 
         if (roBillingResponse.ok) {
-          roBillingData = await roBillingResponse.json();
+          const roBillingJson = await roBillingResponse.json();
+          roBillingData = {
+            data: Array.isArray(roBillingJson.data) ? roBillingJson.data : 
+                  Array.isArray(roBillingJson) ? roBillingJson : []
+          };
         }
         if (operationsResponse.ok) {
-          operationsData = await operationsResponse.json();
+          const operationsJson = await operationsResponse.json();
+          operationsData = {
+            data: Array.isArray(operationsJson.data) ? operationsJson.data : 
+                  Array.isArray(operationsJson) ? operationsJson : []
+          };
         }
 
         // Process RO Billing data for this advisor
-        const advisorROs = roBillingData.data.filter((record: any) => 
+        // Ensure roBillingData.data is an array before calling filter
+        const roBillingArray = Array.isArray(roBillingData.data) ? roBillingData.data : [];
+        const advisorROs = roBillingArray.filter((record: any) => 
           record.serviceAdvisor === advisorName
         );
 
@@ -173,7 +183,9 @@ const AdvisorDetailPage = () => {
         const runningRepair = achievedMap.rr;
 
         // Process Operations data for this advisor
-        const advisorOps = operationsData.data.find((op: any) => 
+        // Ensure operationsData.data is an array before calling find
+        const operationsArray = Array.isArray(operationsData.data) ? operationsData.data : [];
+        const advisorOps = operationsArray.find((op: any) => 
           op.advisorName === advisorName
         ) as any;
 

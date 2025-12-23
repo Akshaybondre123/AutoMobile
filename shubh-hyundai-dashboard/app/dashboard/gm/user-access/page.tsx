@@ -325,7 +325,12 @@ export default function UserAccessRoleManagement() {
           'operations_upload',
           'warranty_upload',
           'service_booking_upload',
-          'average_upload'
+          'average_upload',
+          'ro_billing_report',
+          'operations_report',
+          'warranty_report',
+          'service_booking_report',
+          'repair_order_list_report'
         ]
         
         const missingPermissions = criticalPermissions.filter(permKey => 
