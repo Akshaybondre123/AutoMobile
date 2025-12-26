@@ -1,109 +1,126 @@
 "use client"
 
-import { useEffect } from "react"
 import { useAuth } from "@/lib/auth-context"
-import { usePermissions } from "@/hooks/usePermissions"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Shield, AlertTriangle, RefreshCw } from "lucide-react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { AlertCircle, Mail, Shield } from "lucide-react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { useEffect } from "react"
 
 export default function UnauthorizedPage() {
-  const { user, logout } = useAuth()
-  const { permissions, isLoading: permissionsLoading, refetch, debug } = usePermissions()
+  const { user } = useAuth()
   const router = useRouter()
 
-  // If user has permissions, redirect back to dashboard
-  useEffect(() => {
-    if (!permissionsLoading && permissions.length > 0) {
-      console.log('✅ User has permissions, redirecting to dashboard')
-      router.push("/dashboard")
+  // Helper to check if user is Service Advisor
+  const isServiceAdvisor = () => {
+    if (!user?.role) {
+      console.log('🔍 Unauthorized page - No user role found')
+      return false
     }
-  }, [permissions, permissionsLoading, router])
-
-  const handleRefresh = async () => {
-    await refetch()
-    // Try to route again after refresh
-    router.push("/dashboard")
+    const roleStr = String(user.role).toLowerCase().trim()
+    console.log('🔍 Unauthorized page - Checking role:', user.role, '-> normalized:', roleStr)
+    const roleParts = roleStr.split('|').map(p => p.trim())
+    const isAdvisor = roleParts.some(part => 
+      part.includes('service advisor') || 
+      part === 'service_advisor' ||
+      part.includes('service_advisor') ||
+      part === 'advisor' ||
+      part.includes('advisor')
+    ) || roleStr.includes('service advisor') || roleStr.includes('service_advisor') || roleStr === 'service advisor'
+    console.log('🔍 Unauthorized page - Is Service Advisor?', isAdvisor)
+    return isAdvisor
   }
 
-  // Don't show access denied if user has permissions (wait for redirect)
-  if (!permissionsLoading && permissions.length > 0) {
+  // Service Advisors should never see this page - redirect them immediately
+  useEffect(() => {
+    if (user) {
+      console.log('🔍 Unauthorized page - User loaded:', user.email, 'Role:', user.role)
+      if (isServiceAdvisor()) {
+        console.log('👤 Service Advisor detected on unauthorized page - redirecting to SA dashboard')
+        router.replace("/dashboard/sa")
+      }
+    }
+  }, [user, router])
+
+  // Don't render the page if user is a Service Advisor (they should be redirected)
+  if (user && isServiceAdvisor()) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p>Redirecting to dashboard...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p>Redirecting to your dashboard...</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-red-50 to-orange-100 flex items-center justify-center p-4">
-      <Card className="w-full max-w-md border-red-200 shadow-lg">
-        <CardHeader className="text-center">
-          <div className="mx-auto mb-4 p-3 bg-red-100 rounded-full w-fit">
-            <Shield className="h-8 w-8 text-red-600" />
+    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-red-50 via-orange-50 to-yellow-50 p-4">
+      <Card className="w-full max-w-2xl border-2 border-red-200 shadow-lg">
+        <CardHeader className="text-center pb-4">
+          <div className="flex justify-center mb-4">
+            <div className="rounded-full bg-red-100 p-4">
+              <Shield className="h-12 w-12 text-red-600" />
+            </div>
           </div>
-          <CardTitle className="text-2xl font-bold text-red-800">
-            {permissions.length === 0 ? "Access Denied - No Permissions" : "Access Denied"}
+          <CardTitle className="text-3xl font-bold text-red-900">
+            Access Denied
           </CardTitle>
+          <CardDescription className="text-lg mt-2">
+            You do not have access to any dashboard
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="text-center space-y-2">
-            <p className="text-gray-700 font-medium">
-              {permissions.length === 0 
-                ? "You have no permissions assigned. Access denied." 
-                : "You don't have permission to access this dashboard."}
-            </p>
-            <p className="text-sm text-gray-500">
-              Contact your administrator to get the appropriate permissions assigned to your role.
-            </p>
-          </div>
-
-          <div className={`${permissions.length === 0 ? 'bg-red-50 border-red-200' : 'bg-yellow-50 border-yellow-200'} border rounded-lg p-4`}>
-            <div className="flex items-start gap-3">
-              <AlertTriangle className={`h-5 w-5 ${permissions.length === 0 ? 'text-red-600' : 'text-yellow-600'} mt-0.5`} />
-              <div className="space-y-2">
-                <p className={`text-sm font-medium ${permissions.length === 0 ? 'text-red-800' : 'text-yellow-800'}`}>
-                  User Information:
+          <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded">
+            <div className="flex items-start">
+              <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5 mr-3 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-yellow-800">
+                  No Dashboard Access
                 </p>
-                <div className={`text-xs space-y-1 ${permissions.length === 0 ? 'text-red-700' : 'text-yellow-700'}`}>
-                  <p><strong>Email:</strong> {user?.email}</p>
-                  <p><strong>Role:</strong> {user?.role || 'Not assigned'}</p>
-                  <p><strong>Permissions:</strong> {permissions.length > 0 ? permissions.join(", ") : "0 (Access Denied)"}</p>
-                </div>
+                <p className="text-sm text-yellow-700 mt-1">
+                  Your account does not have permission to access any dashboard. 
+                  Please contact your owner or administrator to get the appropriate permissions assigned to your role.
+                </p>
               </div>
             </div>
           </div>
 
-          <div className="space-y-3">
-            <Button 
-              onClick={handleRefresh} 
-              className="w-full"
-              variant="outline"
+          {user && (
+            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+              <p className="text-sm font-medium text-gray-700 mb-2">Your Account Information:</p>
+              <div className="space-y-1 text-sm text-gray-600">
+                <p><span className="font-medium">Name:</span> {user.name}</p>
+                <p><span className="font-medium">Email:</span> {user.email}</p>
+                {user.role && (
+                  <p><span className="font-medium">Role:</span> {user.role}</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded">
+            <div className="flex items-start">
+              <Mail className="h-5 w-5 text-blue-600 mt-0.5 mr-3 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-blue-800 mb-1">
+                  Need Help?
+                </p>
+                <p className="text-sm text-blue-700">
+                  Contact your system administrator or owner to request dashboard access. 
+                  They can assign the appropriate permissions to your account.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-center pt-4">
+            <Link
+              href="/"
+              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
             >
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Refresh Permissions
-            </Button>
-            
-            <Button 
-              onClick={() => debug()} 
-              className="w-full"
-              variant="outline"
-              size="sm"
-            >
-              Debug Permissions (Check Console)
-            </Button>
-            
-            <Button 
-              onClick={logout} 
-              className="w-full"
-              variant="destructive"
-            >
-              Logout
-            </Button>
+              Return to Home
+            </Link>
           </div>
         </CardContent>
       </Card>

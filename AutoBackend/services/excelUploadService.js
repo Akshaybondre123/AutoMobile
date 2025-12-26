@@ -4,6 +4,7 @@ import WarrantyData from '../models/WarrantyData.js';
 import BookingListData from '../models/BookingListData.js';
 import OperationsPartData from '../models/OperationsPartData.js';
 import RepairOrderListData from '../models/RepairOrderListData.js';
+import advisorMappingService from './advisorMappingService.js';
 import mongoose from 'mongoose';
 import crypto from 'crypto';
 
@@ -197,19 +198,25 @@ class ExcelUploadService {
 
     console.log(`📊 Analysis for ${config.name}:`);
     console.log(`   File Hash: ${fileHash}`);
-    console.log(`   Duplicate File Found: ${duplicateFile ? 'Yes' : 'No'}`);
+    console.log(`   Duplicate File Hash Found: ${duplicateFile ? 'Yes' : 'No'}`);
     console.log(`   Total Excel rows: ${excelRows.length}`);
     console.log(`   Unique keys in Excel: ${excelUniqueKeys.length}`);
-    console.log(`   Existing keys: ${existingKeys.length}`);
+    console.log(`   Existing keys in DB: ${existingKeys.length}`);
     console.log(`   New keys: ${newKeys.length}`);
+    console.log(`   ⚠️ Note: Even if file hash matches, if no records exist, will treat as CASE_1_NEW_FILE`);
 
     // Determine case
+    // IMPORTANT: Even if file hash matches (duplicateFile), we need to check if records actually exist
+    // If no existing records found, treat as new file (CASE_1) to allow data insertion
     let uploadCase;
-    if (duplicateFile) {
+    if (duplicateFile && existingKeys.length > 0) {
+      // File hash matches AND records exist - true duplicate file
       uploadCase = 'CASE_2_DUPLICATE_FILE';
     } else if (existingKeys.length === 0) {
+      // No existing records - treat as new file (even if hash matches, data might have been deleted)
       uploadCase = 'CASE_1_NEW_FILE';
     } else {
+      // Some records exist, some are new
       uploadCase = 'CASE_3_MIXED_FILE';
     }
 
@@ -234,6 +241,23 @@ class ExcelUploadService {
 
     console.log(`🚀 Processing ${uploadCase} for ${config.name}`);
 
+    // Map advisor names to User IDs for booking_list files
+    let advisorMapping = {};
+    if (fileMetadata.file_type === 'booking_list') {
+      const advisorNames = excelRows
+        .map(row => row.service_advisor)
+        .filter(name => name && name.trim());
+      
+      if (advisorNames.length > 0) {
+        console.log(`🔍 Mapping ${advisorNames.length} advisor names to User IDs...`);
+        advisorMapping = await advisorMappingService.batchMapAdvisors(
+          advisorNames,
+          fileMetadata.showroom_id
+        );
+        console.log(`✅ Mapped ${Object.keys(advisorMapping).length} advisors`);
+      }
+    }
+
     // Repair Order List and Booking List uploads can be large and sometimes hit transaction limits.
     // To improve reliability, we avoid wrapping them in a MongoDB transaction and
     // let individual upserts succeed independently.
@@ -252,7 +276,7 @@ class ExcelUploadService {
 
       switch (uploadCase) {
         case 'CASE_1_NEW_FILE':
-          insertedCount = await this.handleCase1NewFile(excelRows, fileMetadata, model, session);
+          insertedCount = await this.handleCase1NewFile(excelRows, fileMetadata, model, session, advisorMapping);
           break;
 
         case 'CASE_2_DUPLICATE_FILE':
@@ -262,7 +286,8 @@ class ExcelUploadService {
             model,
             uniqueKey,
             analysis.existingRecords,
-            session
+            session,
+            advisorMapping
           );
           break;
 
@@ -275,7 +300,8 @@ class ExcelUploadService {
             existingKeys,
             newKeys,
             analysis.existingRecords,
-            session
+            session,
+            advisorMapping
           );
           insertedCount = result.insertedCount;
           updatedCount = result.updatedCount;
@@ -308,7 +334,7 @@ class ExcelUploadService {
   /**
    * CASE 1: New file - insert all rows with uploaded_file_id (with upsert for duplicates)
    */
-  async handleCase1NewFile(excelRows, fileMetadata, model, session) {
+  async handleCase1NewFile(excelRows, fileMetadata, model, session, advisorMapping = {}) {
     console.log('📝 CASE 1: Inserting all rows as new records (with upsert for duplicates)');
     
     const config = this.getModelConfig(fileMetadata.file_type);
@@ -325,6 +351,19 @@ class ExcelUploadService {
         showroom_id: fileMetadata.showroom_id,
         updated_at: new Date()
       };
+
+      // Add advisor_id for booking_list files
+      // advisorMapping now returns { advisorId, showroomId } object
+      if (fileMetadata.file_type === 'booking_list' && row.service_advisor) {
+        const advisorMappingData = advisorMapping[row.service_advisor];
+        if (advisorMappingData && advisorMappingData.advisorId) {
+          documentData.advisor_id = advisorMappingData.advisorId;
+          // Ensure showroom_id matches the advisor's showroom
+          if (advisorMappingData.showroomId) {
+            documentData.showroom_id = advisorMappingData.showroomId;
+          }
+        }
+      }
       
       let queryCondition;
       
@@ -377,7 +416,7 @@ class ExcelUploadService {
   /**
    * CASE 2: Duplicate file - update existing rows and set new uploaded_file_id
    */
-  async handleCase2DuplicateFile(excelRows, fileMetadata, model, uniqueKey, existingRecords, session) {
+  async handleCase2DuplicateFile(excelRows, fileMetadata, model, uniqueKey, existingRecords, session, advisorMapping = {}) {
     console.log('🔄 CASE 2: Updating existing rows for duplicate file');
     
     let updatedCount = 0;
@@ -409,6 +448,19 @@ class ExcelUploadService {
         uploaded_file_id: fileMetadata._id,  // Update to new file metadata ID
         updated_at: new Date()
       };
+
+      // Add advisor_id for booking_list files
+      // advisorMapping now returns { advisorId, showroomId } object
+      if (fileMetadata.file_type === 'booking_list' && row.service_advisor) {
+        const advisorMappingData = advisorMapping[row.service_advisor];
+        if (advisorMappingData && advisorMappingData.advisorId) {
+          updateData.advisor_id = advisorMappingData.advisorId;
+          // Ensure showroom_id matches the advisor's showroom
+          if (advisorMappingData.showroomId) {
+            updateData.showroom_id = advisorMappingData.showroomId;
+          }
+        }
+      }
       
       // Handle amount fields properly for RO Billing and Warranty
       if (fileMetadata.file_type === 'ro_billing') {
@@ -457,7 +509,7 @@ class ExcelUploadService {
   /**
    * CASE 3: Mixed file - update existing, insert new (both with uploaded_file_id)
    */
-  async handleCase3MixedFile(excelRows, fileMetadata, model, uniqueKey, existingKeys, newKeys, existingRecords, session) {
+  async handleCase3MixedFile(excelRows, fileMetadata, model, uniqueKey, existingKeys, newKeys, existingRecords, session, advisorMapping = {}) {
     console.log('🔀 CASE 3: Mixed processing - updating existing and inserting new');
     
     let insertedCount = 0;
@@ -510,6 +562,19 @@ class ExcelUploadService {
         uploaded_file_id: fileMetadata._id,  // Update to new file metadata ID
         updated_at: new Date()
       };
+
+      // Add advisor_id for booking_list files
+      // advisorMapping now returns { advisorId, showroomId } object
+      if (fileMetadata.file_type === 'booking_list' && row.service_advisor) {
+        const advisorMappingData = advisorMapping[row.service_advisor];
+        if (advisorMappingData && advisorMappingData.advisorId) {
+          updateData.advisor_id = advisorMappingData.advisorId;
+          // Ensure showroom_id matches the advisor's showroom
+          if (advisorMappingData.showroomId) {
+            updateData.showroom_id = advisorMappingData.showroomId;
+          }
+        }
+      }
       
       // Handle amount fields properly for RO Billing and Warranty
       if (fileMetadata.file_type === 'ro_billing') {
@@ -551,13 +616,30 @@ class ExcelUploadService {
     
     // Insert new rows with uploaded_file_id
     if (newRows.length > 0) {
-      const documentsToInsert = newRows.map(row => ({
-        ...row,
-        uploaded_file_id: fileMetadata._id,  // Set foreign key to file metadata
-        showroom_id: fileMetadata.showroom_id,
-        created_at: new Date(),
-        updated_at: new Date()
-      }));
+      const documentsToInsert = newRows.map(row => {
+        const doc = {
+          ...row,
+          uploaded_file_id: fileMetadata._id,  // Set foreign key to file metadata
+          showroom_id: fileMetadata.showroom_id,
+          created_at: new Date(),
+          updated_at: new Date()
+        };
+
+        // Add advisor_id for booking_list files
+        // advisorMapping now returns { advisorId, showroomId } object
+        if (fileMetadata.file_type === 'booking_list' && row.service_advisor) {
+          const advisorMappingData = advisorMapping[row.service_advisor];
+          if (advisorMappingData && advisorMappingData.advisorId) {
+            doc.advisor_id = advisorMappingData.advisorId;
+            // Ensure showroom_id matches the advisor's showroom
+            if (advisorMappingData.showroomId) {
+              doc.showroom_id = advisorMappingData.showroomId;
+            }
+          }
+        }
+
+        return doc;
+      });
 
       const insertOptions = session ? { session } : undefined;
       const result = await model.insertMany(documentsToInsert, insertOptions);

@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog"
 import { TrendingUp, Upload, FileText, DollarSign, Clock, Shield, Calendar, BarChart3, Loader2, CheckCircle, Car, Wrench, Gauge, Activity, Users, AlertCircle, Search, CalendarIcon, RefreshCw, X } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts"
@@ -21,16 +22,9 @@ type DataType = "ro_billing" | "operations" | "warranty" | "service_booking" | "
 
 const COLORS = ['#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
 
-const SM_REQUIRED_PERMISSIONS = [
-  'ro_billing_dashboard',
-  'operations_dashboard',
-  'ro_billing_upload',
-  'operations_upload',
-  'warranty_dashboard',
-  'service_booking_dashboard',
-  'service_booking_upload',
-  'repair_order_list_dashboard'
-]
+// REMOVED: Hardcoded SM_REQUIRED_PERMISSIONS
+// System is now fully backend-driven - permissions come from backend API
+// Only owners have default permissions (handled in backend)
 
 // Format R/O Date function
 const formatRODate = (roDate: any): string => {
@@ -611,6 +605,8 @@ const AdvisorOperationsSection = ({ user }: { user: any }) => {
   const [advisors, setAdvisors] = useState<string[]>([])
   const [operationsData, setOperationsData] = useState<AdvisorOperation[]>([])
   const [roData, setRoData] = useState<any[]>([])
+  const [roLabourByAdvisor, setRoLabourByAdvisor] = useState<Record<string, number>>({})
+  const [roTotalsByAdvisor, setRoTotalsByAdvisor] = useState<Record<string, { labour: number; parts: number; total: number }>>({})
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [uploadingAdvisor, setUploadingAdvisor] = useState<string | null>(null)
@@ -624,6 +620,8 @@ const AdvisorOperationsSection = ({ user }: { user: any }) => {
   const roLastFetch = useRef<Record<string, number>>({})
   const OPERATIONS_COOLDOWN_MS = 5_000
   const RO_COOLDOWN_MS = 5_000
+
+  const normalizeName = (s: string) => (s || '').toString().trim().toLowerCase().replace(/\s+/g, ' ')
 
   // Fetch unique advisors from RO Billing (summary)
   useEffect(() => {
@@ -708,18 +706,45 @@ const AdvisorOperationsSection = ({ user }: { user: any }) => {
 
         if (summaryResponse.ok) {
           const summaryResult = await summaryResponse.json()
-          // Map summary result to existing shape minimally
-          setOperationsData(
-            Array.isArray(summaryResult.data)
-              ? summaryResult.data.map((s: any) => ({
-                  advisorName: s.advisorName,
-                  totalMatchedAmount: s.totalAmount,
-                  totalOperationsCount: s.operations,
-                  lastDate: s.lastDate,
+          // Merge summary with any existing optimistic data so values don't disappear
+          const summaryArr: any[] = Array.isArray(summaryResult.data) ? summaryResult.data : []
+          setOperationsData(prev => {
+            const prevMap: Record<string, AdvisorOperation> = {}
+            prev.forEach(p => { prevMap[normalizeName(p.advisorName)] = p })
+            const nextMap: Record<string, AdvisorOperation> = {}
+            summaryArr.forEach((s: any) => {
+              const key = normalizeName(s.advisorName)
+              const amount = Number(s.totalAmount ?? s.totalMatchedAmount ?? 0)
+              const merged: AdvisorOperation = {
+                advisorName: s.advisorName,
+                totalMatchedAmount: amount,
+                matchedOperations: []
+              }
+              nextMap[key] = merged
+            })
+            const keys = new Set<string>([...Object.keys(prevMap), ...Object.keys(nextMap)])
+            const combined: AdvisorOperation[] = []
+            keys.forEach(k => {
+              const prevItem = prevMap[k]
+              const nextItem = nextMap[k]
+              if (nextItem) {
+                const finalAmount = (nextItem.totalMatchedAmount && nextItem.totalMatchedAmount > 0)
+                  ? nextItem.totalMatchedAmount
+                  : (prevItem?.totalMatchedAmount || 0)
+                combined.push({
+                  advisorName: nextItem.advisorName || prevItem?.advisorName || '',
+                  totalMatchedAmount: finalAmount,
+                  totalOperationsCount: nextItem.totalOperationsCount || prevItem?.totalOperationsCount || 0,
+                  lastDate: nextItem.lastDate || prevItem?.lastDate,
                   matchedOperations: []
-                }))
-              : []
-          )
+                })
+              } else if (prevItem) {
+                combined.push(prevItem)
+              }
+            })
+            combined.sort((a, b) => a.advisorName.localeCompare(b.advisorName))
+            return combined
+          })
         } else {
           // fallback to full data if summary fails
           const response = await fetch(
@@ -739,6 +764,53 @@ const AdvisorOperationsSection = ({ user }: { user: any }) => {
     }
 
     loadOperationsData()
+  }, [user?.email, user?.city, selectedDate, viewMode])
+
+  const operationsMap = React.useMemo(() => {
+    const map: Record<string, AdvisorOperation> = {}
+    operationsData.forEach(op => {
+      map[normalizeName(op.advisorName)] = op
+    })
+    return map
+  }, [operationsData])
+
+  // Fetch RO Billing records to compute totals per advisor for VAS vs Without VAS
+  useEffect(() => {
+    const fetchRoBillingForLabour = async () => {
+      if (!user?.email || !user?.city) return
+      try {
+        const res = await fetch(
+          getApiUrl(`/api/service-manager/dashboard-data?uploadedBy=${user.email}&city=${user.city}&dataType=ro_billing`)
+        )
+        if (!res.ok) return
+        const json = await res.json()
+        const records = Array.isArray(json?.data) ? json.data : []
+        let filtered = records
+        if (viewMode === 'specific' && selectedDate) {
+          filtered = records.filter((r: any) => (r.billDate || 'Unknown') === selectedDate)
+        }
+        const labourMap: Record<string, number> = {}
+        const totalsMap: Record<string, { labour: number; parts: number; total: number }> = {}
+        filtered.forEach((r: any) => {
+          const adv = normalizeName(r.serviceAdvisor || 'Unknown')
+          const labour = Number(r.labourAmt) || 0
+          const parts = Number(r.partAmt) || 0
+          const total = labour + parts
+          labourMap[adv] = (labourMap[adv] || 0) + labour
+          const prev = totalsMap[adv] || { labour: 0, parts: 0, total: 0 }
+          totalsMap[adv] = {
+            labour: prev.labour + labour,
+            parts: prev.parts + parts,
+            total: prev.total + total,
+          }
+        })
+        setRoLabourByAdvisor(labourMap)
+        setRoTotalsByAdvisor(totalsMap)
+      } catch (e) {
+        console.warn('Failed to compute RO labour by advisor', e)
+      }
+    }
+    fetchRoBillingForLabour()
   }, [user?.email, user?.city, selectedDate, viewMode])
 
   const handleFileUpload = async (advisorName: string, file: File) => {
@@ -773,20 +845,77 @@ const AdvisorOperationsSection = ({ user }: { user: any }) => {
 
       const result = await response.json()
 
-      // Enhanced success message with case information
-      alert(`✅ Upload successful using ${result.uploadCase}!\n\nAdvisor: ${advisorName}\nDate: ${selectedDate}\nMatched Operations: ${result.matchedCount}\nTotal Amount: ₹${result.totalMatchedAmount.toLocaleString()}\n\nCase Details:\n- Inserted: ${result.insertedCount} records\n- Updated: ${result.updatedCount} records\n- Upload Time: ${result.uploadDate}`)
+      // Enhanced success message with case information (hide undefined case text)
+      alert(`✅ Upload successful!\n\nAdvisor: ${advisorName}\nDate: ${selectedDate}\nMatched Operations: ${result.matchedCount}\nTotal Amount: ₹${result.totalMatchedAmount.toLocaleString()}\n\nCase Details:\n- Inserted: ${result.insertedCount} records\n- Updated: ${result.updatedCount} records\n- Upload Time: ${result.uploadDate}`)
 
       if (fileInputRefs.current[advisorName]) {
         fileInputRefs.current[advisorName]!.value = ""
       }
 
+      // Optimistic update so VAS shows immediately for this advisor
+      setOperationsData(prev => {
+        const next = [...prev]
+        const idx = next.findIndex(op => normalizeName(op.advisorName) === normalizeName(advisorName))
+        const payloadAmount = Number(result.totalMatchedAmount) || 0
+        const updated: AdvisorOperation = {
+          advisorName,
+          totalMatchedAmount: payloadAmount,
+          matchedOperations: []
+        }
+        if (idx >= 0) {
+          next[idx] = { ...next[idx], ...updated }
+        } else {
+          next.push(updated)
+        }
+        return next
+      })
+
       const refreshResponse = await fetch(
-        getApiUrl(`/api/service-manager/advisor-operations?uploadedBy=${user.email}&city=${user.city}&dataDate=${selectedDate}&viewMode=${viewMode}`)
+        getApiUrl(`/api/service-manager/advisor-operations/summary?uploadedBy=${user.email}&city=${user.city}&dataDate=${selectedDate}&viewMode=${viewMode}`)
       )
 
       if (refreshResponse.ok) {
         const refreshResult = await refreshResponse.json()
-        setOperationsData(refreshResult.data || [])
+        const summaryArr: any[] = Array.isArray(refreshResult.data) ? refreshResult.data : []
+        setOperationsData(prev => {
+          const prevMap: Record<string, AdvisorOperation> = {}
+          prev.forEach(p => { prevMap[normalizeName(p.advisorName)] = p })
+          const nextMap: Record<string, AdvisorOperation> = {}
+          summaryArr.forEach((s: any) => {
+            const key = normalizeName(s.advisorName)
+            const amount = Number(s.totalAmount ?? s.totalMatchedAmount ?? 0)
+            const merged: AdvisorOperation = {
+              advisorName: s.advisorName,
+              totalMatchedAmount: amount,
+              totalOperationsCount: Number(s.operations) || 0,
+              lastDate: s.lastDate,
+              matchedOperations: []
+            }
+            nextMap[key] = merged
+          })
+          const keys = new Set<string>([...Object.keys(prevMap), ...Object.keys(nextMap)])
+          const combined: AdvisorOperation[] = []
+          keys.forEach(k => {
+            const prevItem = prevMap[k]
+            const nextItem = nextMap[k]
+            if (nextItem) {
+              // If summary returned zero but we have a previous non-zero (fresh upload), keep previous
+              const finalAmount = (nextItem.totalMatchedAmount && nextItem.totalMatchedAmount > 0)
+                ? nextItem.totalMatchedAmount
+                : (prevItem?.totalMatchedAmount || 0)
+              combined.push({
+                advisorName: nextItem.advisorName || prevItem?.advisorName || '',
+                totalMatchedAmount: finalAmount,
+                matchedOperations: []
+              })
+            } else if (prevItem) {
+              combined.push(prevItem)
+            }
+          })
+          // Keep stable order by advisor name
+          combined.sort((a, b) => a.advisorName.localeCompare(b.advisorName))
+          return combined
+        })
       }
       
       // ✅ Invalidate dashboard cache for operations so main dashboard shows new data instantly
@@ -811,34 +940,36 @@ const AdvisorOperationsSection = ({ user }: { user: any }) => {
   }
 
   const getAdvisorData = (advisorName: string): AdvisorOperation | undefined => {
-    return operationsData.find((op) => op.advisorName === advisorName)
+    return operationsMap[normalizeName(advisorName)]
   }
 
   const getOverallLabourAmount = (advisorName: string): number => {
-    return roData
-      .filter((r: any) => r.serviceAdvisor === advisorName)
-      .reduce((sum: number, r: any) => sum + (Number(r.labourAmt) || 0), 0)
+    return roLabourByAdvisor[normalizeName(advisorName)] || 0
+  }
+
+  const getOverallROTotalAmount = (advisorName: string): number => {
+    return roTotalsByAdvisor[normalizeName(advisorName)]?.total || 0
   }
 
   const getWithoutVAS = (advisorName: string): number => {
-    const overallLabour = getOverallLabourAmount(advisorName)
-    const advisorData = getAdvisorData(advisorName)
-    const vasAmount = advisorData?.totalMatchedAmount || 0
-    return overallLabour - vasAmount
+    const vas = getAdvisorData(advisorName)?.totalMatchedAmount || 0
+    const labour = getOverallLabourAmount(advisorName)
+    const value = vas - labour
+    return value < 0 ? 0 : value
   }
 
-  const filteredAdvisors = advisors.filter((advisor) =>
+  const displayAdvisors = React.useMemo(() => {
+    const s = new Set<string>(advisors)
+    operationsData.forEach(op => { if (op.advisorName) s.add(op.advisorName) })
+    return Array.from(s).sort()
+  }, [advisors, operationsData])
+
+  const filteredAdvisors = displayAdvisors.filter((advisor) =>
     advisor.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
   const totalVAS = operationsData.reduce((sum, op) => sum + (op.totalMatchedAmount || 0), 0)
-  const totalWithoutVAS = advisors.reduce((sum, advisor) => {
-    const advisorData = getAdvisorData(advisor)
-    if (advisorData) {
-      return sum + getWithoutVAS(advisor)
-    }
-    return sum
-  }, 0)
+  const totalWithoutVAS = displayAdvisors.reduce((sum, advisor) => sum + getWithoutVAS(advisor), 0)
 
   return (
     <Card className="border-2 border-green-200 bg-gradient-to-br from-white to-green-50/30 shadow-lg">
@@ -1090,42 +1221,30 @@ const AdvisorOperationsSection = ({ user }: { user: any }) => {
                         </td>
 
                         <td className="py-4 px-4 border-r border-gray-200 text-right">
-                          {advisorData ? (
-                            <div className="space-y-1">
-                              <div className="text-xl font-bold text-green-700">
-                                ₹{advisorData.totalMatchedAmount.toLocaleString()}
+                          {(() => {
+                            const vas = advisorData?.totalMatchedAmount || 0
+                            return (
+                              <div className="space-y-1">
+                                <div className="text-xl font-bold text-green-700">₹{vas.toLocaleString()}</div>
+                                {advisorData?.dataDate && (
+                                  <div className="text-xs text-gray-500">
+                                    Data: {new Date(advisorData.dataDate).toLocaleDateString()}
+                                  </div>
+                                )}
                               </div>
-                              {advisorData.dataDate && (
-                                <div className="text-xs text-gray-500">
-                                  Data: {new Date(advisorData.dataDate).toLocaleDateString()}
-                                </div>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-gray-400 text-sm">No data</span>
-                          )}
+                            )
+                          })()}
                         </td>
 
                         <td className="py-4 px-4 text-right">
-                          {advisorData ? (
-                            (() => {
-                              const overallLabour = getOverallLabourAmount(advisor)
-                              const withoutVAS = getWithoutVAS(advisor)
-                              
-                              return (
-                                <div className="space-y-1">
-                                  <div className="text-xl font-bold text-blue-700">
-                                    ₹{withoutVAS.toLocaleString()}
-                                  </div>
-                                  <div className="text-xs text-gray-500">
-                                    Labour: ₹{overallLabour.toLocaleString()}
-                                  </div>
-                                </div>
-                              )
-                            })()
-                          ) : (
-                            <span className="text-gray-400 text-sm">No data</span>
-                          )}
+                          {(() => {
+                            const withoutVAS = getWithoutVAS(advisor)
+                            return (
+                              <div className="space-y-1">
+                                <div className="text-xl font-bold text-blue-700">₹{withoutVAS.toLocaleString()}</div>
+                              </div>
+                            )
+                          })()}
                         </td>
                       </tr>
                     )
@@ -1176,6 +1295,58 @@ export default function SMDashboard() {
   const [workTypeDataFetched, setWorkTypeDataFetched] = useState(false)
   const [dateFilter, setDateFilter] = useState('')
   const [selectedWorkType, setSelectedWorkType] = useState('all')
+
+  const [advisorDetailOpen, setAdvisorDetailOpen] = useState(false)
+  const [advisorDetailAdvisor, setAdvisorDetailAdvisor] = useState<string | null>(null)
+  const [advisorDetailRows, setAdvisorDetailRows] = useState<any[]>([])
+  const [advisorDetailTotals, setAdvisorDetailTotals] = useState<{ ros: number; labour: number; parts: number; total: number }>({ ros: 0, labour: 0, parts: 0, total: 0 })
+
+  const openAdvisorDetails = useCallback((advisor: string) => {
+    try {
+      let rows = Array.isArray(dashboardData?.data) ? dashboardData.data : []
+      rows = rows.filter((r: any) => (r.serviceAdvisor || 'Unknown') === advisor)
+      if (!showOverall) {
+        rows = rows.filter((r: any) => (r.billDate || 'Unknown') === selectedDate)
+      }
+      rows = rows.filter((record: any) =>
+        !record.workType?.toLowerCase().includes('accidental repair') &&
+        !record.workType?.toLowerCase().includes('running repair bodycare')
+      )
+
+      const mapped = rows.map((r: any) => {
+        const labourAmt = r.labourAmt || 0
+        const partAmt = r.partAmt || 0
+        const labourTax = r.labourTax || 0
+        const partTax = r.partTax || 0
+        const labour = showWithTax ? labourAmt + labourTax : labourAmt
+        const parts = showWithTax ? partAmt + partTax : partAmt
+        const total = labour + parts
+        return {
+          billDate: r.billDate || r.uploadDate || 'Unknown',
+          workType: r.workType || 'Unknown',
+          labour,
+          parts,
+          total,
+          raw: r
+        }
+      })
+
+      const totals = mapped.reduce((acc: any, row: any) => {
+        acc.ros += 1
+        acc.labour += row.labour
+        acc.parts += row.parts
+        acc.total += row.total
+        return acc
+      }, { ros: 0, labour: 0, parts: 0, total: 0 })
+
+      setAdvisorDetailAdvisor(advisor)
+      setAdvisorDetailRows(mapped)
+      setAdvisorDetailTotals(totals)
+      setAdvisorDetailOpen(true)
+    } catch (e) {
+      console.error('openAdvisorDetails error', e)
+    }
+  }, [dashboardData?.data, selectedDate, showOverall, showWithTax])
   const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({})
   const [showroomCity, setShowroomCity] = useState<string | null>(null)
 
@@ -1233,11 +1404,14 @@ export default function SMDashboard() {
     }
   }, [user])
 
-  // Only owner has fixed/privileged access - all others must have permissions
+  // Only owner has fixed/privileged access - all others must have permissions from backend
   const isOwner = user?.role === "owner"
   const hasAnyPermissions = permissions.length > 0
-  // Check if user has ANY of the SM required permissions (or is owner)
-  const hasSMAccess = isOwner || SM_REQUIRED_PERMISSIONS.some(permission => hasPermission(permission))
+  // Fully backend-driven: If user has any permissions, they can access (no hardcoded checks)
+  // Only owners have default permissions (handled in backend)
+  const hasSMAccess = isOwner || hasAnyPermissions
+  
+  // REMOVED: SM_REQUIRED_PERMISSIONS constant - system is fully backend-driven
 
   // Debug logging for permissions
   useEffect(() => {
@@ -1247,8 +1421,7 @@ export default function SMDashboard() {
       console.log("🔍 SM Dashboard - Permissions:", permissions)
       console.log("🔍 SM Dashboard - isOwner:", isOwner)
       console.log("🔍 SM Dashboard - hasAnyPermissions:", hasAnyPermissions)
-      const smPermsCheck = SM_REQUIRED_PERMISSIONS.map(p => ({ perm: p, has: hasPermission(p) }))
-      console.log("🔍 SM Dashboard - Permission checks:", smPermsCheck)
+      // REMOVED: Hardcoded SM_REQUIRED_PERMISSIONS check - system is fully backend-driven
       console.log("🔍 SM Dashboard - hasSMAccess:", hasSMAccess)
     }
   }, [permissions, permissionsLoading, user, isOwner, hasAnyPermissions, hasPermission, hasSMAccess])
@@ -1335,8 +1508,9 @@ export default function SMDashboard() {
   }
 
   // ✅ Only check permissions (owner is the only fixed role)
-  // All other users must have explicit permissions
-  const hasSMAccessByRole = isOwner || SM_REQUIRED_PERMISSIONS.some(permission => hasPermission(permission))
+  // All other users must have explicit permissions from backend
+  // REMOVED: Hardcoded SM_REQUIRED_PERMISSIONS - system is fully backend-driven
+  const hasSMAccessByRole = isOwner || hasAnyPermissions
 
   // Check if user has NO permissions AND is NOT owner - show access denied
   if (!hasAnyPermissions && !isOwner) {
@@ -1487,18 +1661,13 @@ export default function SMDashboard() {
 
     // Check if user has permission for this data type (skip check for 'average' - handled separately)
     if (selectedDataType !== 'average') {
-      const dataTypePermissionMap: Record<string, string> = {
-        'ro_billing': 'ro_billing_dashboard',
-        'operations': 'operations_dashboard',
-        'warranty': 'warranty_dashboard',
-        'service_booking': 'service_booking_dashboard',
-        'repair_order_list': 'repair_order_list_dashboard',
-      }
-      const requiredPermission = dataTypePermissionMap[selectedDataType]
-      const hasRequiredPermission = isOwner || (requiredPermission && hasPermission(requiredPermission))
+      // REMOVED: Hardcoded dataTypePermissionMap
+      // System is now fully backend-driven - if user has any permissions, they can access
+      // Only owners have default permissions (handled in backend)
+      const hasRequiredPermission = isOwner || hasAnyPermissions
       
-      // If permissions are loaded and user doesn't have permission, show access denied
-      if (!permissionsLoading && !isOwner && requiredPermission && !hasPermission(requiredPermission)) {
+      // If permissions are loaded and user doesn't have any permissions, show access denied
+      if (!permissionsLoading && !isOwner && !hasAnyPermissions) {
         return (
           <Card className="border-gray-200 bg-gradient-to-br from-red-50 to-white">
             <CardContent className="p-12 text-center">
@@ -1508,7 +1677,7 @@ export default function SMDashboard() {
                 You don't have permission to view {selectedDataType.replace('_', ' ')} data.
               </p>
               <p className="text-sm text-gray-500">
-                Required permission: <strong>{requiredPermission}</strong>
+                Please contact your administrator to get the appropriate permissions assigned.
               </p>
             </CardContent>
           </Card>
@@ -2465,7 +2634,12 @@ export default function SMDashboard() {
                               onMouseEnter={() => setHoveredAdvisor(advisor)}
                               onMouseLeave={() => setHoveredAdvisor(null)}
                             >
-                              <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-blue-700 font-bold text-sm cursor-help">
+                              <span
+                                className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-blue-700 font-bold text-sm cursor-pointer"
+                                onClick={() => openAdvisorDetails(advisor)}
+                                role="button"
+                                title="View advisor details"
+                              >
                                 {data.ros}
                               </span>
                               {hoveredAdvisor === advisor && Object.keys(data.workTypes).length > 0 && (
@@ -2523,6 +2697,152 @@ export default function SMDashboard() {
             </Card>
           )
         })()}
+<Dialog open={advisorDetailOpen} onOpenChange={setAdvisorDetailOpen}>
+ <DialogContent
+  style={{
+    width: "72vw",
+    maxWidth: "98vw",
+    height: "92vh",
+    transform: "translateX(5vw)", // 👈 adjust value (2–6vw)
+  }}
+  className="
+    p-0
+    overflow-hidden
+    rounded-xl
+    border border-gray-300
+    shadow-2xl
+    bg-white
+  "
+>
+
+
+
+    {/* ================= HEADER ================= */}
+    <div className="bg-gradient-to-r from-blue-600 to-indigo-700 px-6 py-4 text-white">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-white/20 rounded-lg">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold">
+              {advisorDetailAdvisor || "Advisor Details"}
+            </h2>
+            <p className="text-xs opacity-90">
+              {showOverall ? "Overall Summary" : selectedDate}
+            </p>
+          </div>
+        </div>
+
+       
+      </div>
+    </div>
+
+    {/* ================= BODY ================= */}
+    <div className="h-[calc(88vh-72px)] overflow-y-auto p-6 space-y-6">
+
+      {/* ================= SUMMARY ROW ================= */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-blue-50 border rounded-xl p-4">
+          <p className="text-xs text-blue-600">ROs</p>
+          <p className="text-2xl font-bold text-blue-700">
+            {advisorDetailTotals.ros}
+          </p>
+        </div>
+
+        <div className="bg-purple-50 border rounded-xl p-4">
+          <p className="text-xs text-purple-600">Total</p>
+          <p className="text-2xl font-bold text-purple-700">
+            ₹{advisorDetailTotals.total.toLocaleString("en-IN")}
+          </p>
+        </div>
+
+        <div className="bg-emerald-50 border rounded-xl p-4">
+          <p className="text-xs text-emerald-600">Labour</p>
+          <p className="text-xl font-bold text-emerald-700">
+            ₹{advisorDetailTotals.labour.toLocaleString("en-IN")}
+          </p>
+          <div className="mt-2 h-2 bg-emerald-200 rounded-full">
+            <div
+              className="h-full bg-emerald-500 rounded-full"
+              style={{
+                width: `${(advisorDetailTotals.labour / advisorDetailTotals.total) * 100}%`,
+              }}
+            />
+          </div>
+        </div>
+
+        <div className="bg-indigo-50 border rounded-xl p-4">
+          <p className="text-xs text-indigo-600">Parts</p>
+          <p className="text-xl font-bold text-indigo-700">
+            ₹{advisorDetailTotals.parts.toLocaleString("en-IN")}
+          </p>
+          <div className="mt-2 h-2 bg-indigo-200 rounded-full">
+            <div
+              className="h-full bg-indigo-500 rounded-full"
+              style={{
+                width: `${(advisorDetailTotals.parts / advisorDetailTotals.total) * 100}%`,
+              }}
+            />
+          </div>
+        </div>
+      </div>
+
+
+      {/* ================= TRANSACTIONS ================= */}
+      <div>
+        <h3 className="text-base font-semibold text-gray-700 mb-4">
+          Transactions ({advisorDetailRows.length})
+        </h3>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {advisorDetailRows.map((row, idx) => (
+            <div
+              key={idx}
+              className="bg-white border rounded-xl p-4 hover:shadow-md transition"
+            >
+              <div className="flex justify-between mb-2">
+                <div>
+                  <p className="text-xs text-blue-600 font-medium">{row.billDate}</p>
+                  <p className="text-sm font-semibold text-gray-700 truncate">
+                    {row.workType}
+                  </p>
+                </div>
+                <p className="font-bold text-gray-900">
+                  ₹{row.total.toLocaleString("en-IN")}
+                </p>
+              </div>
+
+              <div className="space-y-1 text-sm">
+                <div className="flex justify-between text-emerald-700">
+                  <span>Labour</span>
+                  <span>₹{row.labour.toLocaleString("en-IN")}</span>
+                </div>
+                <div className="flex justify-between text-indigo-700">
+                  <span>Parts</span>
+                  <span>₹{row.parts.toLocaleString("en-IN")}</span>
+                </div>
+              </div>
+
+              <div className="mt-3 h-2 flex rounded-full overflow-hidden">
+                <div
+                  className="bg-emerald-500"
+                  style={{ width: `${(row.labour / row.total) * 100}%` }}
+                />
+                <div
+                  className="bg-indigo-500"
+                  style={{ width: `${(row.parts / row.total) * 100}%` }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </DialogContent>
+</Dialog>
 
         {/* RF Mechanical Performance Table by Date - For RO Billing */}
         {selectedDataType === "ro_billing" && (() => {

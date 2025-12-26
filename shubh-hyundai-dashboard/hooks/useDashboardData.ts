@@ -5,6 +5,7 @@ import { useDashboard, DataType, DashboardData } from '@/contexts/DashboardConte
 import { useAuth } from '@/lib/auth-context'
 import { usePermissions } from '@/hooks/usePermissions'
 import { getApiUrl } from '@/lib/config'
+import { useAppSelector } from '@/lib/store/hooks'
 
 interface UseDashboardDataOptions {
   dataType: DataType
@@ -28,6 +29,7 @@ interface UseDashboardDataReturn {
 export const useDashboardData = (options: UseDashboardDataOptions): UseDashboardDataReturn => {
   const { dataType, autoFetch = true, backgroundRevalidation = true, summary = false } = options
   const { user } = useAuth()
+  const token = useAppSelector((state) => state.auth.token)
   const { permissions, isLoading: permissionsLoading } = usePermissions()
   const {
     getData,
@@ -82,66 +84,51 @@ export const useDashboardData = (options: UseDashboardDataOptions): UseDashboard
     const fetchCity = deriveCity(user.email, user.city)
     console.log('📍 Using city for fetch:', fetchCity, '(from:', user.city || 'email/default', ')')
 
-    // Wait for permissions to load before checking
-    if (permissionsLoading) {
-      console.log('⏳ Waiting for permissions to load...')
-      return
+    // Check if user is Service Advisor (always has access to service_booking)
+    const isServiceAdvisor = () => {
+      if (!user?.role) return false
+      const roleStr = String(user.role).toLowerCase().trim()
+      const roleParts = roleStr.split('|').map(p => p.trim())
+      return roleParts.some(part => 
+        part.includes('service advisor') || 
+        part === 'service_advisor' ||
+        part.includes('service_advisor')
+      ) || roleStr.includes('service advisor') || roleStr.includes('service_advisor')
     }
 
-    // Only owner has fixed access - all others must have explicit permissions
-    const isOwner = user.role === "owner"
-    const userHasAccess = isOwner || permissions.length > 0
-    if (!userHasAccess) {
-      console.log('🚫 Skipping fetch - no permissions assigned (Access Denied)')
-      return
+    const isAdvisor = isServiceAdvisor()
+
+    // Service Advisors can always fetch service_booking data without permission checks
+    if (isAdvisor && dataType === 'service_booking') {
+      console.log('✅ Service Advisor - skipping permission check for service_booking')
+    } else {
+      // Wait for permissions to load before checking (for other users)
+      if (permissionsLoading) {
+        console.log('⏳ Waiting for permissions to load...')
+        return
+      }
+
+      // Only owner has fixed access - all others must have explicit permissions
+      const isOwner = user.role === "owner"
+      const userHasAccess = isOwner || permissions.length > 0
+      if (!userHasAccess) {
+        console.log('🚫 Skipping fetch - no permissions assigned (Access Denied)')
+        return
+      }
     }
     
-    // For non-owner users, check if they have permission for this specific data type
-    if (!isOwner) {
-      const dataTypePermissionMap: Record<string, string> = {
-        'ro_billing': 'ro_billing_dashboard',
-        'operations': 'operations_dashboard',
-        'warranty': 'warranty_dashboard',
-        'service_booking': 'service_booking_dashboard',
-        'repair_order_list': 'repair_order_list_dashboard',
-        // 'average' doesn't need a specific permission - if user has ANY SM permission, they can view average
+    // REMOVED: Hardcoded permission checks for data types
+    // System is now fully backend-driven - if user has permissions, they can access data
+    // Backend will handle permission validation for data access
+    // Only owners have default permissions (handled in backend)
+    // For non-owner and non-advisor users, if they have any permissions, allow data access
+    if (!isAdvisor && user.role !== "owner") {
+      const hasAnyPermissions = Array.isArray(permissions) && permissions.length > 0
+      if (!hasAnyPermissions) {
+        console.log(`🚫 Skipping fetch - user has no permissions for dataType "${dataType}"`)
+        return
       }
-      
-      const requiredPermission = dataTypePermissionMap[dataType]
-      if (requiredPermission) {
-        // Check if user has the required permission
-        const hasRequiredPermission = Array.isArray(permissions) && permissions.includes(requiredPermission)
-        if (!hasRequiredPermission) {
-          console.log(`🚫 Skipping fetch - user doesn't have permission "${requiredPermission}" for dataType "${dataType}"`)
-          console.log(`📋 Available permissions:`, permissions)
-          return
-        }
-        console.log(`✅ User has permission "${requiredPermission}" for dataType "${dataType}"`)
-      } else if (dataType === 'average') {
-        // For average data type, check if user has ANY SM dashboard permission
-        // If they have any SM permission, they can view the average dashboard
-        const smPermissions = [
-          'ro_billing_dashboard',
-          'operations_dashboard',
-          'warranty_dashboard',
-          'service_booking_dashboard',
-          'repair_order_list_dashboard',
-          'ro_billing_upload',
-          'operations_upload',
-          'service_booking_upload',
-          'target_report', // Target report is also SM-related
-          'upload' // Upload permission is also SM-related
-        ]
-        const hasAnySMPermission = Array.isArray(permissions) && smPermissions.some(perm => permissions.includes(perm))
-        if (!hasAnySMPermission) {
-          console.log(`🚫 Skipping fetch - user doesn't have any SM dashboard permission for average dataType`)
-          console.log(`📋 Available permissions:`, permissions)
-          console.log(`📋 Looking for any of:`, smPermissions)
-          return
-        }
-        console.log(`✅ User has SM dashboard permission for average dataType`)
-        console.log(`📋 User permissions include SM permission, allowing average view`)
-      }
+      console.log(`✅ User has permissions, allowing data access for "${dataType}"`)
     }
 
     const fetchKey = `${user.email}-${dataType}-${fetchCity}`
@@ -241,12 +228,19 @@ export const useDashboardData = (options: UseDashboardDataOptions): UseDashboard
       
       try {
         console.log('🌐 Making fetch request to:', apiUrl)
+        const headers: HeadersInit = {
+          'Content-Type': 'application/json',
+        }
+        
+        // Add Authorization header if token is available
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`
+        }
+
         const response = await fetch(apiUrl, {
           signal: controller.signal,
           credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers,
           mode: 'cors'
         })
         clearTimeout(timeoutId)
@@ -338,26 +332,46 @@ export const useDashboardData = (options: UseDashboardDataOptions): UseDashboard
     }
   }, [user?.email, user?.city, dataType, markForRefresh])
 
-  // Auto-fetch on mount or when dataType changes (wait for permissions to load)
+  // Check if user is Service Advisor
+  const isServiceAdvisor = () => {
+    if (!user?.role) return false
+    const roleStr = String(user.role).toLowerCase().trim()
+    const roleParts = roleStr.split('|').map(p => p.trim())
+    return roleParts.some(part => 
+      part.includes('service advisor') || 
+      part === 'service_advisor' ||
+      part.includes('service_advisor')
+    ) || roleStr.includes('service advisor') || roleStr.includes('service_advisor')
+  }
+
+  const isAdvisor = isServiceAdvisor()
+  // Service Advisors can fetch service_booking without waiting for permissions
+  const canFetchWithoutPermissions = isAdvisor && dataType === 'service_booking'
+
+  // Auto-fetch on mount or when dataType changes
+  // Service Advisors don't need to wait for permissions for service_booking
   useEffect(() => {
-    if (autoFetch && user?.email && !permissionsLoading) {
+    if (autoFetch && user?.email && (canFetchWithoutPermissions || !permissionsLoading)) {
       // City will be derived in fetchData if not present
       console.log('🔄 Auto-fetch triggered for:', dataType, {
         user: user.email,
         city: user.city || 'will be derived',
         permissionsLoaded: !permissionsLoading,
-        permissionsCount: permissions.length
+        permissionsCount: permissions.length,
+        isServiceAdvisor: isAdvisor,
+        skipPermissionCheck: canFetchWithoutPermissions
       })
-      // Only fetch if permissions are loaded (fetchData will check permissions)
+      // Only fetch if permissions are loaded (or if Service Advisor for service_booking)
       fetchData()
     } else {
       console.log('⏸️ Auto-fetch skipped for:', dataType, {
         autoFetch,
         hasUser: !!user?.email,
-        permissionsLoading
+        permissionsLoading,
+        canFetchWithoutPermissions
       })
     }
-  }, [autoFetch, user?.email, user?.city, dataType, permissionsLoading, permissions.length, fetchData])
+  }, [autoFetch, user?.email, user?.city, dataType, permissionsLoading, permissions.length, fetchData, canFetchWithoutPermissions, isAdvisor])
 
   // Background revalidation for stale data (wait for permissions to load)
   useEffect(() => {

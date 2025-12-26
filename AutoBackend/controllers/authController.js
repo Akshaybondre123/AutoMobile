@@ -51,9 +51,28 @@ export const login = async (req, res) => {
       return formattedRoles.join(' | ')
     }
 
+    // Check if user has "Service Advisor" role specifically
+    // Only Service Advisors should be filtered to see only their own data
+    // All other roles (Owner, Service Manager, custom roles) can see all advisor data
+    const isServiceAdvisor = (roleDocs) => {
+      if (!roleDocs || roleDocs.length === 0) return false
+      
+      const roleNames = roleDocs.map(role => (role.name || '').toString().toLowerCase().trim())
+      
+      // Check if user has Service Advisor role specifically
+      const advisorRoleNames = ['service_advisor', 'service advisor', 'advisor', 'sa']
+      return roleNames.some(name => 
+        advisorRoleNames.some(advisorRole => name === advisorRole || name.includes(advisorRole))
+      )
+    }
+
+    const isAdvisor = isServiceAdvisor(roles)
+
     const payload = {
       sub: user._id,
       email: user.email,
+      isServiceAdvisor: isAdvisor, // true if user has Service Advisor role, false otherwise
+      showroom_id: user.showroom_id?.toString()
     }
 
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn: TOKEN_EXPIRES_IN })

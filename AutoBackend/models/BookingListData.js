@@ -23,6 +23,12 @@ const bookingListDataSchema = new mongoose.Schema({
   
   // Booking List specific fields
   service_advisor: String,
+  advisor_id: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: false, // Optional for backward compatibility with existing data
+    index: true
+  },
   bt_date_time: String, // B.T Date & Time
   bt_number: String, // B.T No
   work_type: String,
@@ -94,6 +100,8 @@ bookingListDataSchema.index({ vin_number: 1, showroom_id: 1 }, { unique: true })
 bookingListDataSchema.index({ uploaded_file_id: 1 });
 bookingListDataSchema.index({ showroom_id: 1, bt_date_time: -1 });
 bookingListDataSchema.index({ service_advisor: 1, showroom_id: 1 });
+bookingListDataSchema.index({ advisor_id: 1, showroom_id: 1 }); // Index for advisor filtering
+bookingListDataSchema.index({ advisor_id: 1, booking_status: 1 }); // Index for advisor status queries
 bookingListDataSchema.index({ booking_number: 1, showroom_id: 1 });
 bookingListDataSchema.index({ booking_status: 1, showroom_id: 1 });
 bookingListDataSchema.index({ appointment_date: 1, showroom_id: 1 });

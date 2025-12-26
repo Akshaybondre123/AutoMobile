@@ -46,51 +46,7 @@ export function PermissionGate({
   return <>{children}</>
 }
 
-// Convenience components for common use cases
-export function DashboardGate({ children }: { children: ReactNode }) {
-  return (
-    <PermissionGate permission="dashboard">
-      {children}
-    </PermissionGate>
-  )
-}
-
-export function OverviewGate({ children }: { children: ReactNode }) {
-  return (
-    <PermissionGate permission="overview">
-      {children}
-    </PermissionGate>
-  )
-}
-
-export function ROBillingGate({ children }: { children: ReactNode }) {
-  return (
-    <PermissionGate permissions={["ro_billing_dashboard", "ro_billing_upload", "ro_billing_report"]}>
-      {children}
-    </PermissionGate>
-  )
-}
-
-export function OperationsGate({ children }: { children: ReactNode }) {
-  return (
-    <PermissionGate permissions={["operations_dashboard", "operations_upload", "operations_report"]}>
-      {children}
-    </PermissionGate>
-  )
-}
-
-export function WarrantyGate({ children }: { children: ReactNode }) {
-  return (
-    <PermissionGate permissions={["warranty_dashboard", "warranty_upload", "warranty_report"]}>
-      {children}
-    </PermissionGate>
-  )
-}
-
-export function ServiceBookingGate({ children }: { children: ReactNode }) {
-  return (
-    <PermissionGate permissions={["service_booking_dashboard", "service_booking_upload", "service_booking_report"]}>
-      {children}
-    </PermissionGate>
-  )
-}
+// REMOVED: Hardcoded convenience components with specific permissions
+// System is now fully backend-driven - use PermissionGate directly with permissions from backend
+// Only owners have default permissions (handled in backend)
+// Example usage: <PermissionGate permission="ro_billing_dashboard">{children}</PermissionGate>

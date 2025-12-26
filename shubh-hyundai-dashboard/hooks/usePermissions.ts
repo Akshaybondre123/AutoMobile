@@ -24,6 +24,8 @@ export function usePermissions() {
   const { user } = useAuth()
   const dispatch = useAppDispatch()
   const [permissions, setPermissions] = useState<string[]>([])
+  const [dashboards, setDashboards] = useState<string[]>([])
+  const [defaultDashboard, setDefaultDashboard] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -34,17 +36,12 @@ export function usePermissions() {
     }
 
     if (user) {
-      // ✅ IMMEDIATE ACCESS: Set role-based permissions synchronously first for owner-managed flows
-      const rolePermissions = getWorkingRoleBasedPermissions(user.role)
-      if (rolePermissions.length > 0) {
-        setPermissions(rolePermissions)
-      }
-      
-      // Then enhance with **fresh** database permissions asynchronously
-      // (No long-lived cache so new permissions apply immediately after GM updates)
+      // Fetch permissions from backend (fully backend-driven, no hardcoded fallbacks)
       fetchUserPermissions()
     } else {
       setPermissions([])
+      setDashboards([])
+      setDefaultDashboard(null)
       setIsLoading(false)
     }
   }, [user])
@@ -157,6 +154,22 @@ export function usePermissions() {
           console.log("📋 Extracted permissions array:", directPermissions)
           console.log("🔢 Permissions count:", Array.isArray(directPermissions) ? directPermissions.length : 0)
           
+          // Extract dashboards and default_dashboard from response
+          const responseDashboards = directData.data?.dashboards || directData.dashboards || []
+          const responseDefaultDashboard = directData.data?.default_dashboard || directData.default_dashboard || null
+          
+          console.log("📦 Full API Response Structure:", {
+            hasData: !!directData.data,
+            hasDashboards: !!responseDashboards,
+            dashboardsValue: responseDashboards,
+            dashboardsType: typeof responseDashboards,
+            dashboardsIsArray: Array.isArray(responseDashboards),
+            hasDefaultDashboard: !!responseDefaultDashboard,
+            defaultDashboardValue: responseDefaultDashboard,
+            permissionsCount: Array.isArray(directPermissions) ? directPermissions.length : 0,
+            fullResponse: JSON.stringify(directData, null, 2).substring(0, 500) // First 500 chars for debugging
+          })
+          
           if (Array.isArray(directPermissions) && directPermissions.length > 0) {
             const directPermissionKeys = directPermissions.map((p: any) => {
               // Handle different permission formats
@@ -168,26 +181,39 @@ export function usePermissions() {
             }).filter(Boolean) // Remove null/undefined values
             
             console.log("🔑 Extracted permission keys:", directPermissionKeys)
+            console.log("📊 Dashboards from backend:", responseDashboards, "Type:", typeof responseDashboards, "Is Array:", Array.isArray(responseDashboards))
+            console.log("🎯 Default dashboard from backend:", responseDefaultDashboard)
+            
+            // Ensure dashboards is always an array
+            let finalDashboards = Array.isArray(responseDashboards) ? responseDashboards : []
+            let finalDefaultDashboard = responseDefaultDashboard || null
+            
+            // REMOVED: Frontend fallback dashboard mapping
+            // System is now fully backend-driven - no hardcoded permission-to-dashboard mapping
+            // If backend doesn't return dashboards, we don't compute them on frontend
+            // Only owners have default permissions (handled in backend)
             
             if (directPermissionKeys.length > 0) {
               console.log("✅ Setting", directPermissionKeys.length, "permissions from database:", directPermissionKeys)
+              console.log("✅ Setting dashboards:", finalDashboards, "default:", finalDefaultDashboard)
               setPermissions(directPermissionKeys)
+              setDashboards(finalDashboards)
+              setDefaultDashboard(finalDefaultDashboard)
               permissionCache.set(fetchKey, { timestamp: Date.now(), perms: directPermissionKeys })
               setIsLoading(false)
               return directPermissionKeys
             }
           } else {
             console.log("⚠️ Database returned 0 permissions for user:", user.email)
-            // Database returned no permissions - get current role permissions
-            const currentRolePermissions = getWorkingRoleBasedPermissions(user.role)
-            if (currentRolePermissions.length === 0) {
-              console.log("🚫 Setting empty permissions - custom role with no database permissions")
-              setPermissions([])
-              permissionCache.set(fetchKey, { timestamp: Date.now(), perms: [] })
-            } else {
-              console.log("✅ Keeping role-based permissions:", currentRolePermissions)
-            }
-            return currentRolePermissions
+            console.log("📋 Direct permissions value:", directPermissions)
+            // Fully backend-driven: if no permissions, user has no access
+            console.log("🚫 Setting empty permissions - user has no database permissions")
+            setPermissions([])
+            setDashboards([])
+            setDefaultDashboard(null)
+            permissionCache.set(fetchKey, { timestamp: Date.now(), perms: [] })
+            setIsLoading(false)
+            return []
           }
         }
       } catch (directErr: any) {
@@ -210,13 +236,12 @@ export function usePermissions() {
           console.error("💡 Is backend running? Check:", apiUrl)
           setError(`Network error: Unable to reach API at ${apiUrl}. Please check your connection and that the backend is running.`)
           
-          // Fall back to role-based permissions for now
-          const fallbackPerms = getWorkingRoleBasedPermissions(user.role)
-          if (fallbackPerms.length > 0) {
-            console.log("✅ Using role-based permissions as fallback")
-            setPermissions(fallbackPerms)
-            return fallbackPerms
-          }
+          // Fully backend-driven: No fallback permissions
+          console.log("🚫 Network error - setting empty permissions (fully backend-driven)")
+          setPermissions([])
+          setDashboards([])
+          setDefaultDashboard(null)
+          return []
         }
         // Try fallback API
       }
@@ -226,8 +251,7 @@ export function usePermissions() {
         // Ensure we're on client side before making fetch
         if (typeof window === 'undefined') {
           console.log("⏭️ Skipping fallback fetch - server-side rendering")
-          const fallbackPerms = getWorkingRoleBasedPermissions(user.role)
-          return fallbackPerms
+          return []
         }
 
         const summaryResponse = await fetch(getApiUrl("/api/rbac/user-roles-summary"), {
@@ -296,45 +320,39 @@ export function usePermissions() {
             allPermissions = [...new Set(allPermissions)]
             
             if (allPermissions.length > 0) {
-              // Only update if database permissions are different/better
-              const currentRolePermissions = getWorkingRoleBasedPermissions(user.role)
-              console.log("📊 Comparing permissions:")
-              console.log("   Role-based:", currentRolePermissions)
-              console.log("   Database:", allPermissions)
-              
-              if (allPermissions.length >= currentRolePermissions.length) {
-                console.log("✅ Using enhanced database permissions")
-                setPermissions(allPermissions)
-                permissionCache.set(fetchKey, { timestamp: Date.now(), perms: allPermissions })
-              } else {
-                console.log("📊 Role-based permissions are better, keeping them")
-              }
+              console.log("✅ Using database permissions from summary API")
+              setPermissions(allPermissions)
+              setDashboards([]) // Summary API doesn't provide dashboards, will be empty
+              setDefaultDashboard(null)
+              permissionCache.set(fetchKey, { timestamp: Date.now(), perms: allPermissions })
+            } else {
+              console.log("🚫 No permissions found in summary API")
+              setPermissions([])
+              setDashboards([])
+              setDefaultDashboard(null)
             }
           } else {
             console.log("⚠️ User has no roles assigned in database")
-            // ✅ NEW: If user exists in database but has no roles, give them NO permissions
-            // This forces them to contact admin for proper role assignment
+            // Fully backend-driven: If user has no roles, they have no access
             console.log("🚫 Setting empty permissions - user needs admin to assign roles")
             setPermissions([])
+            setDashboards([])
+            setDefaultDashboard(null)
           }
         } else {
           console.log("📊 User not found in database")
-          // ✅ NEW: If user is not in database at all, check if they have a valid role
-          // Only give role-based permissions if they have a recognized role (owner)
-          if (String(user.role) === "owner") {
-            console.log("✅ User is owner but not in database, giving role-based permissions")
-            const currentRolePermissions = getWorkingRoleBasedPermissions(user.role)
-            permissionCache.set(fetchKey, { timestamp: Date.now(), perms: currentRolePermissions })
-          } else {
-            console.log("🚫 User not in database and not owner - setting empty permissions")
-            setPermissions([])
-            permissionCache.set(fetchKey, { timestamp: Date.now(), perms: [] })
-          }
+          // Fully backend-driven: No fallback permissions
+          console.log("🚫 User not in database - setting empty permissions")
+          setPermissions([])
+          setDashboards([])
+          setDefaultDashboard(null)
+          permissionCache.set(fetchKey, { timestamp: Date.now(), perms: [] })
         }
         } else {
-          console.log("⚠️ Summary API failed, keeping role-based permissions")
-          const currentRolePermissions = getWorkingRoleBasedPermissions(user.role)
-          setPermissions(currentRolePermissions)
+          console.log("⚠️ Summary API failed - no fallback permissions")
+          setPermissions([])
+          setDashboards([])
+          setDefaultDashboard(null)
         }
       } catch (summaryErr: any) {
         console.error("❌ Summary API error:", summaryErr)
@@ -343,13 +361,12 @@ export function usePermissions() {
           console.error("🌐 Network error - Fallback API also unreachable")
           setError(`Network error: Unable to reach API. Please check your connection and that the backend is running.`)
         }
-        // Fall back to role-based permissions
-        const currentRolePermissions = getWorkingRoleBasedPermissions(user.role)
-        if (currentRolePermissions.length > 0) {
-          console.log("✅ Using role-based permissions as fallback")
-          setPermissions(currentRolePermissions)
-          return currentRolePermissions
-        }
+        // Fully backend-driven: No fallback permissions
+        console.log("🚫 Summary API error - setting empty permissions")
+        setPermissions([])
+        setDashboards([])
+        setDefaultDashboard(null)
+        return []
       }
 
     } catch (err: any) {
@@ -362,19 +379,11 @@ export function usePermissions() {
         setError("Network error: Unable to reach API. Please check your connection and that the backend is running.")
       }
       
-      // ✅ UPDATED: Only fallback to role permissions for owners
-      // Service managers and others need database permissions
-      if (String(user.role) === "owner") {
-        console.log("✅ Error occurred but user is owner, giving role-based permissions")
-        const fallbackPermissions = getWorkingRoleBasedPermissions(user.role)
-        const finalFallback = fallbackPermissions.length > 0 ? fallbackPermissions : getBasicPermissions()
-        setPermissions(finalFallback)
-      } else {
-        console.log("🚫 Error occurred - only owners get fallback permissions, setting empty permissions")
-        // Still set role-based permissions as a last resort for other roles
-        const rolePerms = getWorkingRoleBasedPermissions(user.role)
-        setPermissions(rolePerms.length > 0 ? rolePerms : [])
-      }
+      // Fully backend-driven: No fallback permissions
+      console.log("🚫 Error occurred - setting empty permissions (fully backend-driven)")
+      setPermissions([])
+      setDashboards([])
+      setDefaultDashboard(null)
     } finally {
       setIsLoading(false)
     }
@@ -397,93 +406,9 @@ export function usePermissions() {
 
   // Old method removed - using simplified single API approach
 
-  const getBasicPermissions = (): string[] => {
-    // ✅ UPDATED: Provide basic database permissions for any authenticated user
-    // This allows access to basic features without role restrictions
-    return [
-      "overview",
-      "dashboard"
-    ]
-  }
-
-  const getWorkingRoleBasedPermissions = (role: string): string[] => {
-    // Only owner gets GM-level role-based fallbacks by default.
-    // All other users must have explicit permissions from database.
-    const roleStr = String(role || "").toLowerCase()
-    if (roleStr === "owner") {
-      return [
-        "dashboard",
-        "overview",
-        "ro_billing_dashboard",
-        "operations_dashboard",
-        "warranty_dashboard",
-        "service_booking_dashboard",
-        "repair_order_list_dashboard",
-        "manage_users",
-        "manage_roles",
-        "ro_billing_upload",
-        "operations_upload",
-        "warranty_upload",
-        "service_booking_upload",
-        "repair_order_list_upload",
-        "ro_billing_report",
-        "operations_report",
-        "warranty_report",
-        "service_booking_report",
-        "repair_order_list_report",
-        "target_report"
-      ]
-    }
-    
-    // Fallback for other roles (for backward compatibility)
-    switch (roleStr) {
-      case "general_manager":
-        return [
-          "dashboard",
-          "overview",
-          "ro_billing_dashboard",
-          "operations_dashboard",
-          "warranty_dashboard",
-          "service_booking_dashboard",
-          "repair_order_list_dashboard",
-          "manage_users",
-          "manage_roles",
-          "ro_billing_upload",
-          "operations_upload",
-          "warranty_upload",
-          "service_booking_upload",
-          "repair_order_list_upload",
-          "ro_billing_report",
-          "operations_report",
-          "warranty_report",
-          "service_booking_report",
-          "repair_order_list_report",
-          "target_report"
-        ]
-      case "service_manager":
-        return []
-      case "service_advisor":
-        return [
-          "dashboard",
-          "overview"
-        ]
-      case "body_shop_manager":
-        return [
-          "dashboard",
-          "overview"
-        ]
-      default:
-        return []
-    }
-  }
-
-  const getRoleBasedPermissions = (role: string): string[] => {
-    // DEPRECATED: This method is no longer used
-    // The system now relies on database-driven permissions
-    // Keeping for backward compatibility only
-    console.warn("getRoleBasedPermissions is deprecated - use database permissions instead")
-    return getBasicPermissions()
-  }
+  // REMOVED: All hardcoded role-based permission functions
+  // System is now fully backend-driven - all permissions must come from the backend API
+  // No fallback permissions are provided - users must have explicit permissions assigned
 
   const hasPermission = useCallback((permissionKey: string): boolean => {
     // Extra safety: handle any unexpected non-array state
@@ -587,7 +512,9 @@ export function usePermissions() {
   }
 
   return {
-    permissions,
+    permissions: permissions || [],
+    dashboards: dashboards || [],
+    defaultDashboard: defaultDashboard || null,
     isLoading,
     error,
     hasPermission,

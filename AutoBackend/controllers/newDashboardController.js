@@ -14,6 +14,10 @@ import mongoose from 'mongoose';
  */
 export const getNewDashboardData = async (req, res) => {
   try {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+
     const { uploadedBy, city, dataType } = req.query;
     const summaryOnly = req.query.summary === 'true';
 
@@ -140,11 +144,151 @@ export const getNewDashboardData = async (req, res) => {
               }}
             ]).catch(() => []);
           
+            let advisorBreakdownAgg = await ROBillingData.aggregate([
+              { $match: { uploaded_file_id: { $in: fileIds } } },
+              {
+                $addFields: {
+                  advisorNameResolved: {
+                    $trim: {
+                      input: {
+                        $ifNull: [
+                          '$service_advisor',
+                          {
+                            $ifNull: [
+                              '$Service Advisor',
+                              {
+                                $ifNull: [
+                                  '$ServiceAdvisor',
+                                  {
+                                    $ifNull: [
+                                      '$serviceAdvisor',
+                                      {
+                                        $ifNull: [
+                                          '$advisor_name',
+                                          {
+                                            $ifNull: [
+                                              '$Advisor Name',
+                                              {
+                                                $ifNull: [
+                                                  '$advisor',
+                                                  'Unknown'
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                $addFields: {
+                  advisorNameResolved: {
+                    $cond: [
+                      { $or: [ { $eq: ['$advisorNameResolved', null] }, { $eq: ['$advisorNameResolved', ''] } ] },
+                      'Unknown',
+                      '$advisorNameResolved'
+                    ]
+                  }
+                }
+              },
+              {
+                $group: {
+                  _id: '$advisorNameResolved',
+                  count: { $sum: 1 },
+                  totalAmount: { $sum: { $ifNull: ['$total_amount', 0] } },
+                  labourAmount: { $sum: { $ifNull: ['$labour_amt', 0] } },
+                  partsAmount: { $sum: { $ifNull: ['$part_amt', 0] } }
+                }
+              },
+              { $sort: { count: -1 } }
+            ]).catch(() => []);
+
+            if (!advisorBreakdownAgg || advisorBreakdownAgg.length === 0) {
+              try {
+                const advisorDocs = await ROBillingData.find(
+                  { uploaded_file_id: { $in: fileIds } },
+                  {
+                    service_advisor: 1,
+                    'Service Advisor': 1,
+                    ServiceAdvisor: 1,
+                    serviceAdvisor: 1,
+                    advisor_name: 1,
+                    'Advisor Name': 1,
+                    advisor: 1,
+                    total_amount: 1,
+                    labour_amt: 1,
+                    part_amt: 1,
+                  }
+                ).lean();
+
+                const advisorMap = new Map();
+                const resolveAdvisorName = (doc) => {
+                  const candidates = [
+                    doc?.service_advisor,
+                    doc?.['Service Advisor'],
+                    doc?.ServiceAdvisor,
+                    doc?.serviceAdvisor,
+                    doc?.advisor_name,
+                    doc?.['Advisor Name'],
+                    doc?.advisor,
+                  ];
+
+                  for (const candidate of candidates) {
+                    if (typeof candidate === 'string' && candidate.trim().length > 0) {
+                      return candidate.trim();
+                    }
+                  }
+                  return 'Unknown';
+                };
+
+                advisorDocs.forEach((doc) => {
+                  const name = resolveAdvisorName(doc);
+                  if (!advisorMap.has(name)) {
+                    advisorMap.set(name, {
+                      advisor: name,
+                      count: 0,
+                      totalAmount: 0,
+                      labourAmount: 0,
+                      partsAmount: 0,
+                    });
+                  }
+
+                  const entry = advisorMap.get(name);
+                  entry.count += 1;
+                  entry.totalAmount += Number(doc?.total_amount || 0);
+                  entry.labourAmount += Number(doc?.labour_amt || 0);
+                  entry.partsAmount += Number(doc?.part_amt || 0);
+                });
+
+                advisorBreakdownAgg = Array.from(advisorMap.values()).sort((a, b) => b.count - a.count);
+              } catch (fallbackError) {
+                console.warn('⚠️ Fallback advisor aggregation failed:', fallbackError);
+                advisorBreakdownAgg = [];
+              }
+            }
+
             summary = {
               totalRecords: count,
               totalAmount: totalAmount[0]?.total || 0,
               labourAmount: totalAmount[0]?.labour || 0,
-              partsAmount: totalAmount[0]?.parts || 0
+              partsAmount: totalAmount[0]?.parts || 0,
+              advisorBreakdown: advisorBreakdownAgg.map(item => ({
+                advisor: item._id,
+                count: item.count,
+                totalAmount: item.totalAmount,
+                labourAmount: item.labourAmount,
+                partsAmount: item.partsAmount
+              }))
             };
           } catch (roBillingError) {
             console.error("❌ Error processing RO Billing data:", roBillingError);

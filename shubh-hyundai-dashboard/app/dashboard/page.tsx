@@ -9,7 +9,7 @@ export default function DashboardPage() {
   const router = useRouter()
   const pathname = usePathname()
   const { user, isLoading: authLoading } = useAuth()
-  const { permissions, isLoading: permissionsLoading, hasPermission } = usePermissions()
+  const { permissions, dashboards, defaultDashboard, isLoading: permissionsLoading } = usePermissions()
   const hasRoutedRef = useRef(false)
 
   useEffect(() => {
@@ -19,9 +19,71 @@ export default function DashboardPage() {
     }
   }, [pathname])
 
+  // Map dashboard IDs to routes
+  const getDashboardRoute = (dashboardId: string): string => {
+    const routeMap: Record<string, string> = {
+      'gm_dashboard': '/dashboard/gm',
+      'sm_dashboard': '/dashboard/sm',
+      'sa_dashboard': '/dashboard/sa',
+      'bdm_dashboard': '/dashboard/bdm',
+    }
+    return routeMap[dashboardId] || '/dashboard'
+  }
+
+  // Helper to check if user is owner
+  const isOwner = () => {
+    if (!user?.role) return false
+    const roleStr = String(user.role).toLowerCase().trim()
+    const roleParts = roleStr.split('|').map(p => p.trim())
+    return roleParts.some(part => 
+      part === 'owner' || 
+      part === 'general_manager' || 
+      part === 'general manager' ||
+      part.includes('owner')
+    ) || roleStr === 'owner' || roleStr.includes('owner')
+  }
+
+  // Helper to check if user is Service Advisor
+  const isServiceAdvisor = () => {
+    if (!user?.role) {
+      console.log('🔍 Dashboard page - No user role found')
+      return false
+    }
+    const roleStr = String(user.role).toLowerCase().trim()
+    console.log('🔍 Dashboard page - Checking role:', user.role, '-> normalized:', roleStr)
+    const roleParts = roleStr.split('|').map(p => p.trim())
+    // Check for various Service Advisor role formats
+    const isAdvisor = roleParts.some(part => 
+      part.includes('service advisor') || 
+      part === 'service_advisor' ||
+      part.includes('service_advisor') ||
+      part === 'advisor' ||
+      part.includes('advisor')
+    ) || roleStr.includes('service advisor') || roleStr.includes('service_advisor') || roleStr === 'service advisor'
+    console.log('🔍 Dashboard page - Is Service Advisor?', isAdvisor)
+    return isAdvisor
+  }
+
   useEffect(() => {
-    // Wait until auth is loaded, user is determined, AND permissions are loaded
-    if (authLoading || !user || permissionsLoading) {
+    // Wait until auth is loaded and user is determined
+    if (authLoading || !user) {
+      return
+    }
+
+    // Service Advisors get automatic access to their dashboard - no permission check needed
+    // Route them immediately without waiting for permissions
+    if (isServiceAdvisor()) {
+      if (hasRoutedRef.current) {
+        return
+      }
+      hasRoutedRef.current = true
+      console.log('👤 Service Advisor detected - routing directly to SA dashboard (no permission check needed)')
+      router.replace("/dashboard/sa")
+      return
+    }
+
+    // Wait for permissions to load for other users (fully backend-driven)
+    if (permissionsLoading) {
       return
     }
 
@@ -30,121 +92,60 @@ export default function DashboardPage() {
       return
     }
 
-    // Helper function to check if user is owner (handles formatted role strings like "Owner | CRM | BSM")
-    // This check must happen FIRST before any other routing logic
-    const isOwner = () => {
-      if (!user?.role) {
-        console.log('⚠️ No user role found for owner check')
-        return false
-      }
-      const roleStr = String(user.role).toLowerCase().trim()
-      const roleParts = roleStr.split('|').map(p => p.trim())
-      const isOwnerRole = roleParts.some(part => part === 'owner') || roleStr.includes('owner')
-      console.log('🔍 Owner check - Role:', roleStr, 'Is Owner:', isOwnerRole)
-      return isOwnerRole
-    }
-
-    // Helper function to check if user has Service Manager role (handles formatted role strings like "Service Manager | CRM | BSM")
-    const isServiceManager = () => {
-      if (!user?.role) return false
-      const roleStr = String(user.role).toLowerCase().trim()
-      const roleParts = roleStr.split('|').map(p => p.trim())
-      return roleParts.some(part => 
-        part.includes('service manager') || 
-        part === 'service_manager' ||
-        part.includes('service_manager')
-      ) || roleStr.includes('service manager') || roleStr.includes('service_manager')
-    }
-
-    // Helper function to check if user has Service Advisor role
-    const isServiceAdvisor = () => {
-      if (!user?.role) return false
-      const roleStr = String(user.role).toLowerCase().trim()
-      const roleParts = roleStr.split('|').map(p => p.trim())
-      return roleParts.some(part => 
-        part.includes('service advisor') || 
-        part === 'service_advisor' ||
-        part.includes('service_advisor')
-      ) || roleStr.includes('service advisor') || roleStr.includes('service_advisor')
-    }
-
-    // Route based on user's primary role (from database)
-    const primaryRole = user.role?.toLowerCase() || ""
-
-    console.log('🎯 Dashboard routing - Role:', primaryRole, 'Permissions:', permissions.length, 'Is Owner:', isOwner(), 'Is Service Manager:', isServiceManager(), 'Is Service Advisor:', isServiceAdvisor())
+    console.log('🎯 Dashboard routing - Dashboards:', dashboards, 'Default:', defaultDashboard, 'Permissions:', permissions?.length || 0, 'Is Owner:', isOwner())
 
     // Mark that we're attempting to route
     hasRoutedRef.current = true
 
-    // PRIORITY 0: Owners should ALWAYS go to GM dashboard first (before checking permissions)
-    if (isOwner()) {
-      console.log('✅ Routing to GM (owner role detected)')
-      router.replace("/dashboard/gm")
-      return
-    }
-
-    // PRIORITY 1: Route based on permissions first (most accurate)
-    // Check for GM-level permissions (manage_users, manage_roles, gm_targets) - these are exclusive to GM
-    if (hasPermission('manage_users') || hasPermission('manage_roles') || hasPermission('gm_targets')) {
-      console.log('✅ Routing to GM (has GM management permissions)')
-      router.replace("/dashboard/gm")
-      return
-    }
-
-    // Check for SM-level permissions (dashboard access for billing, operations, warranty, service_booking, repair_order)
-    if (hasPermission('ro_billing_dashboard') || hasPermission('operations_dashboard') || 
-        hasPermission('warranty_dashboard') || hasPermission('service_booking_dashboard') ||
-        hasPermission('repair_order_list_dashboard') || hasPermission('ro_billing_upload') ||
-        hasPermission('operations_upload') || hasPermission('warranty_upload') || 
-        hasPermission('service_booking_upload')) {
-      console.log('✅ Routing to SM (has SM permissions)')
+    // Fully backend-driven: Route based on permissions array from backend
+    // If user has permissions, route to appropriate dashboard based on backend response
+    // Only owners have default permissions (handled in backend)
+    if (permissions && permissions.length > 0) {
+      console.log(`✅ User has ${permissions.length} permissions - routing based on backend response`)
+      
+      // If dashboards array is provided by backend, use it
+      if (dashboards && dashboards.length > 0) {
+        const firstDashboard = dashboards[0]
+        const route = getDashboardRoute(firstDashboard)
+        console.log(`✅ Routing to ${firstDashboard} (${route}) - from backend dashboards array`)
+        router.replace(route)
+        return
+      }
+      
+      // If defaultDashboard is provided by backend, use it
+      if (defaultDashboard) {
+        const route = getDashboardRoute(defaultDashboard)
+        console.log(`✅ Routing to ${defaultDashboard} (${route}) - from backend default`)
+        router.replace(route)
+        return
+      }
+      
+      // Owner fallback: If owner has permissions but no dashboards, route to GM
+      if (isOwner()) {
+        console.log('👑 Owner detected with permissions, routing to GM dashboard')
+        router.replace("/dashboard/gm")
+        return
+      }
+      
+      // For other users with permissions but no dashboards, route to SM as default
+      console.log('✅ User has permissions, routing to SM dashboard as default')
       router.replace("/dashboard/sm")
       return
     }
-
-    // If user has upload permission, route to SM
-    if (hasPermission('upload')) {
-      console.log('✅ Routing to SM (has upload permission)')
-      router.replace("/dashboard/sm")
-      return
-    }
-
-    // PRIORITY 2: Route based on role if permissions don't clearly indicate
-    // SERVICE MANAGER roles (handles formatted strings like "Service Manager | CRM | BSM")
-    // Check this BEFORE checking for overview permission to prioritize SM over GM overview
-    if (isServiceManager()) {
-      console.log('✅ Routing to SM (service_manager role detected)')
-      router.replace("/dashboard/sm")
-      return
-    }
-
-    if (isServiceAdvisor()) {
-      console.log('✅ Routing to SA (service_advisor role detected)')
-      router.replace("/dashboard/sa")
-      return
-    }
-
-    // If user has overview permission but no other specific permissions, route to GM
-    if (hasPermission('overview')) {
-      console.log('✅ Routing to GM (has overview permission - fallback)')
-      router.replace("/dashboard/gm")
-      return
-    }
-
-    // If user has no recognized role and no permissions, show unauthorized
-    // Don't default to any dashboard - show permission denied
-    if (permissions.length === 0) {
-      console.log('❌ No permissions, routing to unauthorized')
+    
+    // If user has no permissions at all, show access denied
+    // EXCEPT for Service Advisors (they already got routed above) and Owners (they have default permissions)
+    if ((!permissions || permissions.length === 0) && !isOwner()) {
+      console.log('❌ No permissions - routing to unauthorized')
       router.replace("/dashboard/unauthorized")
       return
     }
 
-    // If we have permissions but none matched the routing criteria above, show unauthorized
-    // This means user has some permissions but they don't grant access to any dashboard
-    console.log('❌ Has permissions but no dashboard access - routing to unauthorized')
+    // Should not reach here, but just in case
+    console.log('❌ Unexpected state - routing to unauthorized')
     router.replace("/dashboard/unauthorized")
 
-  }, [user, router, authLoading, permissionsLoading, permissions, hasPermission, pathname])
+  }, [user, router, authLoading, permissionsLoading, dashboards, defaultDashboard, permissions, pathname])
 
   const getLoadingMessage = () => {
     if (authLoading) return "Authenticating..."
@@ -154,20 +155,6 @@ export default function DashboardPage() {
   const getLoadingSubtext = () => {
     if (authLoading) return "Verifying your credentials"
     return "Preparing your workspace"
-  }
-
-  // Helper function to check if user is owner (handles formatted role strings)
-  const isOwner = () => {
-    if (!user?.role) return false
-    const roleStr = String(user.role).toLowerCase().trim()
-    const roleParts = roleStr.split('|').map(p => p.trim())
-    return roleParts.some(part => part === 'owner') || roleStr.includes('owner')
-  }
-  
-  // Redirect to unauthorized page if no permissions (except owner - only fixed role)
-  if (user && !authLoading && !permissionsLoading && permissions.length === 0 && !isOwner()) {
-    router.push("/dashboard/unauthorized")
-    return null
   }
 
   return (

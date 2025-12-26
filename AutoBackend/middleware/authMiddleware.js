@@ -2,7 +2,7 @@
 // In production, this should use JWT tokens or session-based authentication
 
 export const validateServiceManager = (req, res, next) => {
-  const { uploadedBy, city } = req.body.uploadedBy ? req.body : req.query;
+  const { uploadedBy, city } = req.body;
 
   if (!uploadedBy || !city) {
     return res.status(401).json({
@@ -18,9 +18,8 @@ export const validateServiceManager = (req, res, next) => {
     });
   }
 
-  // Validate city
-  const validCities = ["Pune", "Mumbai", "Nagpur"];
-  if (!validCities.includes(city)) {
+  // Validate city (allow any non-empty trimmed string)
+  if (typeof city !== 'string' || city.trim().length === 0) {
     return res.status(401).json({
       message: "Unauthorized: Invalid city",
     });

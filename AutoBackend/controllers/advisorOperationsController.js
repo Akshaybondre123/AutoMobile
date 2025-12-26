@@ -162,7 +162,7 @@ export const uploadAdvisorOperationsWithCases = async (req, res) => {
     });
 
     // Use ExcelUploadService for case-based upload
-    const excelUploadService = new ExcelUploadService();
+    const excelUploadService = ExcelUploadService;
     
     // Prepare file data for upload service
     const fileData = {
@@ -231,6 +231,45 @@ export const getAdvisorOperationsSummary = async (req, res) => {
       match.data_date = { $gte: start, $lte: end };
     }
 
+    // 1) Try persisted daily summaries (fast, reliable)
+    const apsMatch = { uploadedBy };
+    if (city) apsMatch.city = city;
+
+    // Only daily is maintained currently
+    apsMatch.periodType = 'daily';
+
+    if (viewMode === 'specific' && req.query.dataDate) {
+      const dataDate = new Date(req.query.dataDate);
+      apsMatch.periodStart = { $lte: dataDate };
+      apsMatch.periodEnd = { $gte: dataDate };
+    }
+
+    const apsPipeline = [
+      { $match: apsMatch },
+      {
+        $group: {
+          _id: "$advisorName",
+          totalAmount: { $sum: "$operationsPerformance.totalMatchedAmount" },
+          operations: { $sum: "$operationsPerformance.totalOperationsCount" },
+          lastDate: { $max: "$periodEnd" },
+        }
+      },
+      { $sort: { totalAmount: -1 } }
+    ];
+
+    const apsSummary = await AdvisorPerformanceSummary.aggregate(apsPipeline);
+
+    if (apsSummary && apsSummary.length > 0) {
+      const result = apsSummary.map(s => ({
+        advisorName: s._id,
+        totalAmount: s.totalAmount || 0,
+        operations: s.operations || 0,
+        lastDate: s.lastDate
+      }));
+      return res.json({ success: true, data: result, count: result.length, source: 'summary_cache' });
+    }
+
+    // 2) Fallback: aggregate directly from AdvisorOperations
     const summary = await AdvisorOperations.aggregate([
       { $match: match },
       {
@@ -251,7 +290,7 @@ export const getAdvisorOperationsSummary = async (req, res) => {
       lastDate: s.lastDate,
     }));
 
-    return res.json({ success: true, data: result, count: result.length });
+    return res.json({ success: true, data: result, count: result.length, source: 'aggregate' });
   } catch (error) {
     console.error("Error fetching advisor operations summary:", error);
     return res.status(500).json({ message: "Failed to fetch advisor operations summary" });

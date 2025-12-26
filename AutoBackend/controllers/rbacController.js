@@ -586,11 +586,46 @@ export const getUserPermissionsByEmail = async (req, res) => {
     const permissions = await rbacService.getUserPermissions(user._id);
     
     console.log(`Found ${permissions.length} permissions for user ${email}`);
+    console.log(`Permission details:`, permissions.map(p => ({
+      id: p.id,
+      permission_key: p.permission_key,
+      name: p.name
+    })));
     
     // Extract showroom_id and showroom_city
     // When populated, showroom_id is an object with _id and showroom_city
     const showroomId = user.showroom_id?._id?.toString() || user.showroom_id?.toString() || null;
     const showroomCity = user.showroom_id?.showroom_city || null;
+    
+    // Check if user is owner (by checking roles)
+    const userRoles = await rbacService.getUserRoles(user._id);
+    const isOwnerUser = userRoles && userRoles.length > 0 && userRoles.some(role => {
+      const roleName = (role.name || '').toString().toLowerCase().trim();
+      return roleName === 'owner' || 
+             roleName === 'general_manager' || 
+             roleName === 'general manager' ||
+             roleName.includes('owner');
+    });
+    
+    console.log(`👤 User ${email} is owner: ${isOwnerUser}`);
+    
+    // DO NOT automatically map permissions to dashboards
+    // Dashboards must be explicitly assigned through a separate mechanism (e.g., role configuration, user settings)
+    // Only return permissions - no automatic dashboard mapping
+    let dashboards = [];
+    let default_dashboard = null;
+    
+    console.log(`📋 Returning permissions only for ${email} - no automatic dashboard mapping`);
+    console.log(`   Permissions: ${permissions.length}, Dashboards: [] (empty - no automatic mapping)`);
+    
+    // SPECIAL CASE: Only for owners - if they have no dashboard access, grant GM dashboard access
+    // This is the ONLY automatic dashboard grant
+    if (isOwnerUser) {
+      console.log(`👑 Owner ${email} - granting GM dashboard access`);
+      dashboards = ['gm_dashboard'];
+      default_dashboard = 'gm_dashboard';
+      console.log(`✅ Owner dashboard access granted:`, { dashboards, default_dashboard });
+    }
     
     res.status(200).json({
       success: true,
@@ -602,7 +637,9 @@ export const getUserPermissionsByEmail = async (req, res) => {
           showroom_id: showroomId,
           showroom_city: showroomCity
         },
-        permissions: permissions
+        permissions: permissions,
+        dashboards: dashboards,
+        default_dashboard: default_dashboard
       }
     });
 

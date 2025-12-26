@@ -11,42 +11,75 @@ import mongoose from 'mongoose';
 
 /**
  * Get all VINs from RepairOrderList for a specific user/showroom
- * FIXED: Now properly filters by user's uploaded files only
+ * FIXED: For Service Advisors (when uploadedBy is null), get ALL repair orders from showroom
+ * For other roles, filter by user's uploaded files only
  */
 export const getRepairOrderVINs = async (uploadedBy, city, showroom_id) => {
   try {
-    console.log(`🔍 Getting RepairOrder VINs for: ${uploadedBy}, ${city}`);
+    console.log(`🔍 Getting RepairOrder VINs for: ${uploadedBy || 'all users (Service Advisor mode)'}, ${city}, showroom: ${showroom_id}`);
     
-    // SECURITY FIX: Get only the current user's uploaded Repair Order files
-    const userRepairOrderFiles = await UploadedFileMetaDetails.find({
-      uploaded_by: uploadedBy,
-      file_type: 'repair_order_list',
-      showroom_id: showroom_id,
-      processing_status: 'completed'
-    }).select('_id').lean();
+    let repairOrderFiles;
     
-    console.log(`🔒 Found ${userRepairOrderFiles.length} repair order files uploaded by ${uploadedBy}`);
+    // If uploadedBy is null (Service Advisor mode), get ALL repair order files from the showroom
+    // This is because Service Advisors don't upload repair orders - managers do
+    // But VIN matching should work across all repair orders in the showroom
+    if (!uploadedBy) {
+      console.log(`🔒 Service Advisor mode: Getting ALL repair order files from showroom ${showroom_id}`);
+      // Convert showroom_id to string if it's an ObjectId (RepairOrderListData stores showroom_id as String)
+      const showroomIdStr = showroom_id ? showroom_id.toString() : showroom_id;
+      repairOrderFiles = await UploadedFileMetaDetails.find({
+        file_type: 'repair_order_list',
+        showroom_id: showroomIdStr, // Match as string
+        processing_status: 'completed'
+      }).select('_id').lean();
+    } else {
+      // For other roles: Get only the current user's uploaded Repair Order files
+      repairOrderFiles = await UploadedFileMetaDetails.find({
+        uploaded_by: uploadedBy,
+        file_type: 'repair_order_list',
+        showroom_id: showroom_id,
+        processing_status: 'completed'
+      }).select('_id').lean();
+    }
     
-    // If user has no repair order files, return empty set
-    if (userRepairOrderFiles.length === 0) {
-      console.log(`⚠️ No repair order files found for user ${uploadedBy} - VIN matching will show 0 matches`);
+    console.log(`🔒 Found ${repairOrderFiles.length} repair order files ${uploadedBy ? `uploaded by ${uploadedBy}` : 'in showroom'}`);
+    
+    // If no repair order files found, return empty set
+    if (repairOrderFiles.length === 0) {
+      console.log(`⚠️ No repair order files found ${uploadedBy ? `for user ${uploadedBy}` : 'in showroom'} - VIN matching will show 0 matches`);
       return new Set();
     }
     
-    // Get repair orders only from user's uploaded files
-    const userFileIds = userRepairOrderFiles.map(file => file._id);
+    // Get repair orders from the files
+    const fileIds = repairOrderFiles.map(file => file._id);
+    // IMPORTANT: showroom_id in RepairOrderListData is stored as String, not ObjectId
+    const showroomIdStr = showroom_id ? showroom_id.toString() : showroom_id;
     const repairOrders = await RepairOrderListData.find({
-      uploaded_file_id: { $in: userFileIds }
-    }).select('vin').lean();
+      uploaded_file_id: { $in: fileIds },
+      showroom_id: showroomIdStr // Filter by showroom_id to ensure data isolation
+    }).select('vin showroom_id').lean();
+    
+    console.log(`📋 Query details: showroom_id=${showroomIdStr}, fileIds=${fileIds.length}, found ${repairOrders.length} repair orders`);
     
     const vinSet = new Set();
+    let vinCount = 0;
+    let emptyVinCount = 0;
+    
     repairOrders.forEach(order => {
       if (order.vin && order.vin.trim()) {
-        vinSet.add(order.vin.trim().toUpperCase());
+        const normalizedVIN = order.vin.trim().toUpperCase();
+        vinSet.add(normalizedVIN);
+        vinCount++;
+      } else {
+        emptyVinCount++;
       }
     });
     
-    console.log(`📊 Found ${vinSet.size} unique VINs in user's RepairOrderList (from ${userRepairOrderFiles.length} files)`);
+    console.log(`📊 VIN Extraction: ${vinCount} VINs extracted, ${emptyVinCount} empty VINs, ${vinSet.size} unique VINs`);
+    if (vinSet.size > 0 && vinSet.size <= 10) {
+      console.log(`📋 Sample VINs:`, Array.from(vinSet).slice(0, 5));
+    }
+    
     return vinSet;
   } catch (error) {
     console.error('❌ Error getting RepairOrder VINs:', error);
@@ -101,27 +134,47 @@ export const getBookingListVINs = async (uploadedBy, city, showroom_id) => {
 
 /**
  * Perform VIN matching and return enhanced BookingList data with statuses
+ * @param {string} uploadedBy - Email of user who uploaded files
+ * @param {string} city - City name
+ * @param {string} showroom_id - Showroom ID
+ * @param {string|null} advisorIdFilter - If provided, only return bookings for this advisor ID
  */
-export const performVINMatching = async (uploadedBy, city, showroom_id) => {
+export const performVINMatching = async (uploadedBy, city, showroom_id, advisorIdFilter = null) => {
   try {
     console.log(`🎯 Starting VIN matching for: ${uploadedBy}, ${city}, showroom: ${showroom_id}`);
+    if (advisorIdFilter) {
+      console.log(`🔒 Advisor filter active: Only showing bookings for advisor_id: ${advisorIdFilter}`);
+    }
     
     // Get all VINs from RepairOrderList (already filtered by user)
     const repairOrderVINs = await getRepairOrderVINs(uploadedBy, city, showroom_id);
     
-    // SECURITY FIX: Get only the current user's uploaded Booking List files
-    const userBookingFiles = await UploadedFileMetaDetails.find({
-      uploaded_by: uploadedBy,
+    // Build query for booking files
+    const bookingFileQuery = {
       file_type: 'booking_list',
       showroom_id: showroom_id,
       processing_status: 'completed'
-    }).select('_id').lean();
+    };
     
-    console.log(`🔒 Found ${userBookingFiles.length} booking list files uploaded by ${uploadedBy}`);
+    // For Service Advisors: Don't filter by uploaded_by - they should see all bookings linked to them
+    // For other roles: Filter by uploaded_by to show only files they uploaded
+    if (advisorIdFilter) {
+      // Service Advisor mode: Don't filter by uploaded_by - will filter by advisor_id instead
+      console.log(`🔒 Service Advisor mode: Skipping uploaded_by filter - will use advisor_id filter instead`);
+    } else if (uploadedBy) {
+      // Non-advisor mode: Filter by uploaded files (existing behavior)
+      bookingFileQuery.uploaded_by = uploadedBy;
+    }
+    
+    const userBookingFiles = await UploadedFileMetaDetails.find(bookingFileQuery)
+      .select('_id')
+      .lean();
+    
+    console.log(`🔒 Found ${userBookingFiles.length} booking list files`);
     
     // If user has no booking files, return empty result
     if (userBookingFiles.length === 0) {
-      console.log(`⚠️ No booking list files found for user ${uploadedBy}`);
+      console.log(`⚠️ No booking list files found`);
       return {
         bookings: [],
         statusSummary: {},
@@ -133,17 +186,37 @@ export const performVINMatching = async (uploadedBy, city, showroom_id) => {
       };
     }
     
-    // Get bookings only from user's uploaded files
-    const userFileIds = userBookingFiles.map(file => file._id);
-    const bookings = await BookingListData.find({
-      uploaded_file_id: { $in: userFileIds }
-    }).lean();
+    // Build query for bookings
+    // IMPORTANT: Always filter by showroom_id to ensure data isolation
+    const bookingQuery = {
+      uploaded_file_id: { $in: userBookingFiles.map(file => file._id) },
+      showroom_id: new mongoose.Types.ObjectId(showroom_id) // Always filter by showroom
+    };
     
-    console.log(`📋 Found ${bookings.length} booking records from user's uploaded files`);
+    // Add advisor filter if provided (for Service Advisor role)
+    // This ensures advisors only see their own bookings from their showroom
+    if (advisorIdFilter) {
+      bookingQuery.advisor_id = new mongoose.Types.ObjectId(advisorIdFilter);
+      console.log(`🔒 Filtering by advisor_id: ${advisorIdFilter} AND showroom_id: ${showroom_id}`);
+    }
     
-    // If no bookings found from user's files, return empty result
+    // Get bookings with optional advisor filter (always filtered by showroom)
+    const bookings = await BookingListData.find(bookingQuery).lean();
+    
+    if (advisorIdFilter) {
+      console.log(`📋 Found ${bookings.length} booking records for advisor_id: ${advisorIdFilter} in showroom: ${showroom_id}`);
+    } else {
+      console.log(`📋 Found ${bookings.length} booking records from user's uploaded files`);
+    }
+    
+    // If no bookings found, return empty result
     if (bookings.length === 0) {
-      console.log(`⚠️ No BookingList records found for user ${uploadedBy}`);
+      if (advisorIdFilter) {
+        console.log(`⚠️ No BookingList records found for advisor_id: ${advisorIdFilter} in showroom: ${showroom_id}`);
+        console.log(`💡 Tip: Make sure bookings have advisor_id populated and match the advisor's user ID`);
+      } else {
+        console.log(`⚠️ No BookingList records found for user ${uploadedBy}`);
+      }
       return {
         bookings: [],
         statusSummary: {},
@@ -153,12 +226,41 @@ export const performVINMatching = async (uploadedBy, city, showroom_id) => {
         serviceAdvisorBreakdown: [],
         traditionalServiceAdvisorBreakdown: []
       };
+    }
+    
+    // Debug: Log VIN matching details
+    console.log(`🔍 VIN Matching Debug:`);
+    console.log(`   - Total bookings to check: ${bookings.length}`);
+    console.log(`   - Total repair order VINs available: ${repairOrderVINs.size}`);
+    if (repairOrderVINs.size > 0 && repairOrderVINs.size <= 10) {
+      console.log(`   - Sample repair order VINs:`, Array.from(repairOrderVINs).slice(0, 5));
+    }
+    if (bookings.length > 0) {
+      const firstBookingVIN = bookings[0].vin_number ? bookings[0].vin_number.trim().toUpperCase() : '';
+      console.log(`   - Sample booking VIN: "${firstBookingVIN}"`);
+      if (firstBookingVIN) {
+        console.log(`   - Is first booking VIN in repair orders? ${repairOrderVINs.has(firstBookingVIN)}`);
+      }
     }
     
     // Process each booking and determine status
+    let matchedCount = 0;
+    let unmatchedCount = 0;
+    const sampleMatches = [];
+    const sampleUnmatches = [];
+    
     const enhancedBookings = bookings.map(booking => {
       const bookingVIN = booking.vin_number ? booking.vin_number.trim().toUpperCase() : '';
       const isVINMatched = bookingVIN && repairOrderVINs.has(bookingVIN);
+      
+      // Debug first few matches/unmatches
+      if (isVINMatched && matchedCount < 3) {
+        sampleMatches.push(bookingVIN);
+        matchedCount++;
+      } else if (!isVINMatched && bookingVIN && unmatchedCount < 3) {
+        sampleUnmatches.push(bookingVIN);
+        unmatchedCount++;
+      }
       
       // Determine status based on VIN matching and date
       let status = 'Unknown';
@@ -224,12 +326,25 @@ export const performVINMatching = async (uploadedBy, city, showroom_id) => {
       return acc;
     }, {});
     
-    const matchedCount = enhancedBookings.filter(b => b.vin_matched).length;
-    const unmatchedCount = enhancedBookings.filter(b => !b.vin_matched).length;
+    const finalMatchedCount = enhancedBookings.filter(b => b.vin_matched).length;
+    const finalUnmatchedCount = enhancedBookings.filter(b => !b.vin_matched).length;
     
-    console.log(`✅ VIN matching completed for user ${uploadedBy}: ${enhancedBookings.length} bookings processed`);
-    console.log(`📊 Matched VINs: ${matchedCount}, Unmatched VINs: ${unmatchedCount}`);
-    console.log(`🔒 Data isolation: Only user's own booking and repair order data used`);
+    console.log(`✅ VIN matching completed ${uploadedBy ? `for user ${uploadedBy}` : 'for Service Advisor'}: ${enhancedBookings.length} bookings processed`);
+    console.log(`📊 Matched VINs: ${finalMatchedCount}, Unmatched VINs: ${finalUnmatchedCount}`);
+    if (sampleMatches.length > 0) {
+      console.log(`✅ Sample matched VINs:`, sampleMatches);
+    }
+    if (sampleUnmatches.length > 0) {
+      console.log(`❌ Sample unmatched VINs:`, sampleUnmatches);
+      // Check if any unmatched VINs exist in repair orders (for debugging)
+      const firstUnmatch = sampleUnmatches[0];
+      if (firstUnmatch && repairOrderVINs.has(firstUnmatch)) {
+        console.log(`⚠️ WARNING: VIN ${firstUnmatch} exists in repairOrderVINs but wasn't matched!`);
+      } else if (firstUnmatch) {
+        console.log(`💡 VIN ${firstUnmatch} not found in repair order VINs`);
+      }
+    }
+    console.log(`🔒 Data isolation: ${advisorIdFilter ? `Advisor ID filter: ${advisorIdFilter}` : `User's own booking and repair order data used`}`);
     console.log(`📈 Status breakdown:`, Object.keys(statusSummary).map(key => `${key}: ${statusSummary[key].count}`).join(', '));
     
     // Create Service Advisor breakdown with work types and status
@@ -382,17 +497,17 @@ const parseBookingDate = (dateString) => {
 /**
  * Trigger VIN matching after BookingList upload
  */
-export const triggerVINMatchingAfterBookingUpload = async (uploadedBy, city, showroom_id) => {
+export const triggerVINMatchingAfterBookingUpload = async (uploadedBy, city, showroom_id, advisorIdFilter = null) => {
   console.log(`🚀 Triggering VIN matching after BookingList upload`);
-  return await performVINMatching(uploadedBy, city, showroom_id);
+  return await performVINMatching(uploadedBy, city, showroom_id, advisorIdFilter);
 };
 
 /**
  * Trigger VIN matching after RepairOrderList upload
  */
-export const triggerVINMatchingAfterRepairOrderUpload = async (uploadedBy, city, showroom_id) => {
+export const triggerVINMatchingAfterRepairOrderUpload = async (uploadedBy, city, showroom_id, advisorIdFilter = null) => {
   console.log(`🚀 Triggering VIN matching after RepairOrderList upload`);
-  return await performVINMatching(uploadedBy, city, showroom_id);
+  return await performVINMatching(uploadedBy, city, showroom_id, advisorIdFilter);
 };
 
 export default {

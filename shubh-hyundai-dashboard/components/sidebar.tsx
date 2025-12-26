@@ -25,35 +25,41 @@ export function Sidebar() {
     return roleParts.some(part => part === 'owner') || roleStr.includes('owner')
   }
   
-  // Only owner has fixed role - all others use permissions
+  // Only owner has fixed role - all others use permissions from backend
   const isGM = isOwner()
-  const isSM = user.role === "service_manager" || user.role?.toLowerCase().includes("service_manager")
-  const isSA = user.role === "service_advisor" || user.role?.toLowerCase().includes("service_advisor")
-  const isBDM = user.role === "body_shop_manager" || user.role?.toLowerCase().includes("body_shop_manager")
   
-  // Determine dashboard based on permissions (not role) - matches main dashboard routing logic
-  // Check for GM-level permissions (manage_users, manage_roles, gm_targets)
-  const hasGMPermissions = hasPermission('manage_users') || hasPermission('manage_roles') || hasPermission('gm_targets')
+  // Fully backend-driven: Determine dashboard based on backend response, not hardcoded permissions
+  // Use dashboards array from backend if available
+  const { dashboards, defaultDashboard } = usePermissions()
   
-  // Check for SM-level permissions (dashboard access for billing, operations, warranty, service_booking, repair_order)
-  const hasSMPermissions = hasPermission('ro_billing_dashboard') || hasPermission('operations_dashboard') || 
-                           hasPermission('warranty_dashboard') || hasPermission('service_booking_dashboard') ||
-                           hasPermission('repair_order_list_dashboard') || hasPermission('ro_billing_upload') ||
-                           hasPermission('operations_upload') || hasPermission('warranty_upload') || 
-                           hasPermission('service_booking_upload') || hasPermission('upload')
+  // Determine which dashboard to link to - use current path if already on a dashboard
+  let dashboardHref = "/dashboard/sm" // Default fallback
+  const currentPath = pathname
   
-  // Determine which dashboard to link to (priority: GM permissions > SM permissions > overview > role fallback)
-  let dashboardHref = "/dashboard/sa" // Default fallback
-  if (isGM || hasGMPermissions) {
+  // If user is already on a dashboard, keep them on that dashboard
+  if (currentPath.startsWith('/dashboard/gm')) {
     dashboardHref = "/dashboard/gm"
-  } else if (hasSMPermissions) {
+  } else if (currentPath.startsWith('/dashboard/sm')) {
     dashboardHref = "/dashboard/sm"
-  } else if (hasPermission('overview')) {
-    dashboardHref = "/dashboard/gm" // overview routes to GM
-  } else if (isSM) {
-    dashboardHref = "/dashboard/sm"
-  } else if (isBDM) {
+  } else if (currentPath.startsWith('/dashboard/sa')) {
+    dashboardHref = "/dashboard/sa"
+  } else if (currentPath.startsWith('/dashboard/bdm')) {
     dashboardHref = "/dashboard/bdm"
+  } else if (isGM) {
+    dashboardHref = "/dashboard/gm"
+  } else if (dashboards && dashboards.length > 0) {
+    // Use first dashboard from backend
+    const firstDashboard = dashboards[0]
+    if (firstDashboard === 'gm_dashboard') dashboardHref = "/dashboard/gm"
+    else if (firstDashboard === 'sm_dashboard') dashboardHref = "/dashboard/sm"
+    else if (firstDashboard === 'sa_dashboard') dashboardHref = "/dashboard/sa"
+    else if (firstDashboard === 'bdm_dashboard') dashboardHref = "/dashboard/bdm"
+  } else if (defaultDashboard) {
+    // Use default dashboard from backend
+    if (defaultDashboard === 'gm_dashboard') dashboardHref = "/dashboard/gm"
+    else if (defaultDashboard === 'sm_dashboard') dashboardHref = "/dashboard/sm"
+    else if (defaultDashboard === 'sa_dashboard') dashboardHref = "/dashboard/sa"
+    else if (defaultDashboard === 'bdm_dashboard') dashboardHref = "/dashboard/bdm"
   }
 
   // Group navigation items by category for better organization
@@ -71,19 +77,19 @@ export function Sidebar() {
       label: "Overview",
       href: "/dashboard/gm/overview",
       icon: LayoutDashboard,
-      show: isGM || hasPermission("overview"),
+      show: isGM, // Only owners see this (owners have default GM permissions from backend)
     },
     {
       label: "GM Targets",
       href: "/dashboard/gm/targets",
       icon: Target,
-      show: isGM || hasPermission("gm_targets"),
+      show: isGM, // Only owners see this
     },
     {
       label: "User Access",
       href: "/dashboard/gm/user-access",
       icon: Settings,
-      show: isGM || hasPermission("manage_users"),
+      show: isGM, // Only owners see this
     },
   ]
 
@@ -92,13 +98,13 @@ export function Sidebar() {
       label: "Services Dashboard",
       href: "/dashboard/sa/services",
       icon: Wrench,
-      show: isSA,
+      show: false, // REMOVED: Hardcoded isSA check - permissions checked on page level
     },
     {
       label: "Create Service",
       href: "/dashboard/sa/create-service",
       icon: PlusSquare,
-      show: isSA,
+      show: false, // REMOVED: Hardcoded isSA check - permissions checked on page level
     },
   ]
 
@@ -107,7 +113,7 @@ export function Sidebar() {
       label: "Upload",
       href: "/dashboard/sm/upload",
       icon: Upload,
-      show: !isGM && hasPermission("upload"),
+      show: !isGM, // Show for all non-owners (permissions checked on page level)
     },
   ]
 
@@ -116,37 +122,37 @@ export function Sidebar() {
       label: "Target Report",
       href: "/dashboard/reports/targets",
       icon: Target,
-      show: !isGM && hasPermission("target_report"),
+      show: !isGM && hasPermission("target_report"), // Dynamically check permission from backend
     },
     {
       label: "RO Billing Report",
       href: "/dashboard/reports/ro-billing",
       icon: FileText,
-      show: !isGM && hasPermission("ro_billing_report"),
+      show: !isGM && hasPermission("ro_billing_report"), // Dynamically check permission from backend
     },
     {
       label: "Warranty Report",
       href: "/dashboard/reports/warranty",
       icon: Shield,
-      show: !isGM && hasPermission("warranty_report"),
+      show: !isGM && hasPermission("warranty_report"), // Dynamically check permission from backend
     },
     {
       label: "Operations Report",
       href: "/dashboard/reports/operations",
       icon: BarChart3,
-      show: !isGM && hasPermission("operations_report"),
+      show: !isGM && hasPermission("operations_report"), // Dynamically check permission from backend
     },
     {
       label: "Service Booking Report",
       href: "/dashboard/reports/service-booking",
       icon: FileText,
-      show: !isGM && hasPermission("service_booking_report"),
+      show: !isGM && hasPermission("service_booking_report"), // Dynamically check permission from backend
     },
     {
       label: "Repair Order List Report",
       href: "/dashboard/reports/repair-order-list",
       icon: FileText,
-      show: !isGM && hasPermission("repair_order_list_report"),
+      show: !isGM && hasPermission("repair_order_list_report"), // Dynamically check permission from backend
     },
   ]
 
@@ -166,7 +172,7 @@ export function Sidebar() {
         )}
         {visibleItems.map((item) => {
           const Icon = item.icon
-          const isActive = pathname === item.href || pathname?.startsWith(item.href + '/')
+          const isActive = pathname === item.href
           return (
             <Link key={item.href} href={item.href}>
               <button
