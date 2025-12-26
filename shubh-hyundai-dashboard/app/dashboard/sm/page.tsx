@@ -1327,6 +1327,7 @@ export default function SMDashboard() {
           labour,
           parts,
           total,
+          vehicleNumber: r.vehicle_number || r.vehicleNumber || 'N/A',
           raw: r
         }
       })
@@ -2808,6 +2809,9 @@ export default function SMDashboard() {
                   <p className="text-xs text-blue-600 font-medium">{row.billDate}</p>
                   <p className="text-sm font-semibold text-gray-700 truncate">
                     {row.workType}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    <span className="font-medium">Vehicle Reg No:</span> {row.vehicleNumber || 'N/A'}
                   </p>
                 </div>
                 <p className="font-bold text-gray-900">
